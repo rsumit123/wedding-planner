@@ -15,3 +15,8 @@ it('does not show private budget data on the guest view', async () => {
   await user.click(screen.getAllByRole('button', { name: /guest page/i })[0]);
   expect(screen.queryByText(/budget & vendors/i)).not.toBeInTheDocument();
 });
+
+it('keeps the wedding portrait free of a decorative overlay', () => {
+  const { container } = render(<App />);
+  expect(container.querySelector('.sun-disc')).not.toBeInTheDocument();
+});
