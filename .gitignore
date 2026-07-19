@@ -7,3 +7,7 @@ test-results/
 .superpowers/
 *.tsbuildinfo
 src/assets/*-source.png
+api/.venv/
+api/.pytest_cache/
+api/data/
+api/.env
