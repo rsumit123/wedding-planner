@@ -4,6 +4,8 @@ export type ApiTask = { id: number; title: string; assignee_name: string | null;
 export type ApiGuest = { id: number; name: string; side: 'bride' | 'groom'; phone: string | null; note: string; all_events: boolean; event_ids: number[] };
 export type ApiEvent = { id: number; slug: string; name: string; date: string; time_note: string };
 export type GuestSummary = { total: number; bride_total: number; groom_total: number; events: Array<ApiEvent & { guest_count: number }> };
+export type ApiVendor = { id: number; name: string; category: string; amount: number; paid_amount: number };
+export type BudgetSummary = { planned_total: number; paid_total: number; due_total: number };
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API}${path}`, { credentials: 'include', headers: { 'Content-Type': 'application/json', ...(init.headers ?? {}) }, ...init });
@@ -24,4 +26,8 @@ export const api = {
   addGuest: (name: string, side: 'bride' | 'groom') => request<ApiGuest>('/guests', { method: 'POST', body: JSON.stringify({ name, side }) }),
   inviteGuest: (guestId: number, allEvents: boolean, eventIds: number[]) => request<{ id: number; token: string }>('/invitations', { method: 'POST', body: JSON.stringify({ guest_id: guestId, all_events: allEvents, event_ids: eventIds }) }),
   updateGuest: (id: number, name: string, side: 'bride' | 'groom', allEvents: boolean, eventIds: number[]) => request<ApiGuest>(`/guests/${id}`, { method: 'PATCH', body: JSON.stringify({ name, side, all_events: allEvents, event_ids: eventIds }) }),
+  vendors: () => request<ApiVendor[]>('/vendors'),
+  budgetSummary: () => request<BudgetSummary>('/budget-summary'),
+  addVendor: (name: string, category: string, amount: number, paidAmount: number) => request<ApiVendor>('/vendors', { method: 'POST', body: JSON.stringify({ name, category, amount, paid_amount: paidAmount }) }),
+  updateVendor: (id: number, name: string, category: string, amount: number, paidAmount: number) => request<ApiVendor>(`/vendors/${id}`, { method: 'PATCH', body: JSON.stringify({ name, category, amount, paid_amount: paidAmount }) }),
 };

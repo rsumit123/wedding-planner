@@ -34,12 +34,15 @@ class InvitationEvent(Base):
     __tablename__ = 'invitation_events'; id: Mapped[int] = mapped_column(primary_key=True); invitation_id: Mapped[int] = mapped_column(ForeignKey('invitations.id')); event_id: Mapped[int] = mapped_column(ForeignKey('events.id')); status: Mapped[str] = mapped_column(String, default='pending')
 class Activity(Base):
     __tablename__ = 'activity'; id: Mapped[int] = mapped_column(primary_key=True); actor: Mapped[str] = mapped_column(String); action: Mapped[str] = mapped_column(String); created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+class Vendor(Base):
+    __tablename__ = 'vendors'; id: Mapped[int] = mapped_column(primary_key=True); name: Mapped[str] = mapped_column(String); category: Mapped[str] = mapped_column(String); amount: Mapped[int] = mapped_column(Integer, default=0); paid_amount: Mapped[int] = mapped_column(Integer, default=0)
 
 class Login(BaseModel): username: str; password: str
 class TaskIn(BaseModel): title: str = Field(min_length=1, max_length=200); assignee_name: str|None = None; due_date: date|None = None; event_id: int|None = None; status: Literal['open','done'] = 'open'
 class GuestIn(BaseModel): name: str = Field(min_length=1, max_length=160); side: Literal['bride','groom'] = 'groom'; phone: str|None = None; note: str = ''
 class InvitationIn(BaseModel): guest_id: int; all_events: bool = False; event_ids: list[int] = []
 class GuestUpdateIn(BaseModel): name: str = Field(min_length=1, max_length=160); side: Literal['bride','groom']; all_events: bool = False; event_ids: list[int] = []
+class VendorIn(BaseModel): name: str = Field(min_length=1, max_length=160); category: str = Field(min_length=1, max_length=80); amount: int = Field(ge=0); paid_amount: int = Field(ge=0)
 class RsvpIn(BaseModel): statuses: dict[int, Literal['pending','accepted','declined']]; note: str|None = None
 
 app = FastAPI(title='Sumit & Puja Wedding API')
@@ -71,6 +74,7 @@ def user(wedding_session: str|None=Cookie(default=None)):
     return name
 def audit(s, actor, action): s.add(Activity(actor=actor,action=action)); s.commit()
 def event_json(e): return {'id':e.id,'slug':e.slug,'name':e.name,'date':e.event_date.isoformat(),'time_note':e.time_note}
+def vendor_json(v): return {'id':v.id,'name':v.name,'category':v.category,'amount':v.amount,'paid_amount':v.paid_amount}
 
 @app.get('/health')
 def health(): return {'status':'ok'}
@@ -128,6 +132,21 @@ def guest_summary(_:str=Depends(user),s:Session=Depends(db)):
         guest_ids = s.scalars(select(Invitation.guest_id).join(InvitationEvent, InvitationEvent.invitation_id == Invitation.id).where(InvitationEvent.event_id == event.id)).all()
         event_totals.append({**event_json(event), 'guest_count': len(set(guest_ids))})
     return {'total': len(guests), 'bride_total': sum(g.side == 'bride' for g in guests), 'groom_total': sum(g.side == 'groom' for g in guests), 'events': event_totals}
+@app.get('/vendors')
+def vendors(_:str=Depends(user),s:Session=Depends(db)): return [vendor_json(v) for v in s.scalars(select(Vendor).order_by(Vendor.name))]
+@app.post('/vendors')
+def add_vendor(data:VendorIn,name:str=Depends(user),s:Session=Depends(db)):
+    vendor=Vendor(**data.model_dump()); s.add(vendor); s.commit(); s.refresh(vendor); audit(s,name,f'Added vendor: {vendor.name}'); return vendor_json(vendor)
+@app.patch('/vendors/{vendor_id}')
+def update_vendor(vendor_id:int,data:VendorIn,name:str=Depends(user),s:Session=Depends(db)):
+    vendor=s.get(Vendor,vendor_id)
+    if not vendor: raise HTTPException(404,'Vendor not found')
+    for key,value in data.model_dump().items(): setattr(vendor,key,value)
+    s.commit(); audit(s,name,f'Updated vendor: {vendor.name}'); return vendor_json(vendor)
+@app.get('/budget-summary')
+def budget_summary(_:str=Depends(user),s:Session=Depends(db)):
+    vendors=list(s.scalars(select(Vendor))); planned=sum(v.amount for v in vendors); paid=sum(v.paid_amount for v in vendors)
+    return {'planned_total':planned,'paid_total':paid,'due_total':planned-paid}
 @app.post('/invitations')
 def invite(data:InvitationIn,name:str=Depends(user),s:Session=Depends(db)):
     if not s.get(Guest,data.guest_id): raise HTTPException(404,'Guest not found')

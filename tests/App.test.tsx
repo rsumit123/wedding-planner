@@ -1,6 +1,8 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { vi } from 'vitest';
 import App from '../src/App';
+import { api } from '../src/api';
 
 it('shows the couple and organiser sign-in before private planning data', () => {
   render(<App />);
@@ -21,4 +23,12 @@ it('keeps the wedding portrait free of a decorative overlay', () => {
 it('uses a dedicated mobile-friendly organiser login layout', () => {
   render(<App />);
   expect(screen.getByRole('main')).toHaveClass('organiser-login');
+});
+
+it('opens the real budget manager from the home-page shortcut', async () => {
+  vi.spyOn(api, 'me').mockResolvedValue({ username: 'sumit-puja' });
+  vi.spyOn(api, 'tasks').mockResolvedValue([]);
+  render(<App />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Open budget and vendors' }));
+  expect(screen.getByRole('heading', { name: /budget, clearly held/i })).toBeVisible();
 });
