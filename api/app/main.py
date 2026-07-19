@@ -5,8 +5,9 @@ from pathlib import Path
 from typing import Literal
 from uuid import uuid4
 
-from fastapi import Cookie, Depends, FastAPI, HTTPException, Response
+from fastapi import Cookie, Depends, FastAPI, File, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
 from passlib.context import CryptContext
 from pydantic import BaseModel, Field
@@ -24,7 +25,7 @@ signer = URLSafeTimedSerializer(SECRET, salt='wedding-session')
 
 class Base(DeclarativeBase): pass
 class Event(Base):
-    __tablename__ = 'events'; id: Mapped[int] = mapped_column(primary_key=True); slug: Mapped[str] = mapped_column(String, unique=True); name: Mapped[str] = mapped_column(String); event_date: Mapped[date] = mapped_column(Date); time_note: Mapped[str] = mapped_column(String, default=''); venue: Mapped[str] = mapped_column(String, default='')
+    __tablename__ = 'events'; id: Mapped[int] = mapped_column(primary_key=True); slug: Mapped[str] = mapped_column(String, unique=True); name: Mapped[str] = mapped_column(String); event_date: Mapped[date] = mapped_column(Date); time_note: Mapped[str] = mapped_column(String, default=''); venue: Mapped[str] = mapped_column(String, default=''); side: Mapped[str] = mapped_column(String, default='both')
 class Task(Base):
     __tablename__ = 'tasks'; id: Mapped[int] = mapped_column(primary_key=True); title: Mapped[str] = mapped_column(String); assignee_name: Mapped[str|None] = mapped_column(String, nullable=True); due_date: Mapped[date|None] = mapped_column(Date, nullable=True); event_id: Mapped[int|None] = mapped_column(ForeignKey('events.id'), nullable=True); status: Mapped[str] = mapped_column(String, default='open'); created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 class Guest(Base):
@@ -37,6 +38,8 @@ class Activity(Base):
     __tablename__ = 'activity'; id: Mapped[int] = mapped_column(primary_key=True); actor: Mapped[str] = mapped_column(String); action: Mapped[str] = mapped_column(String); created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 class Vendor(Base):
     __tablename__ = 'vendors'; id: Mapped[int] = mapped_column(primary_key=True); name: Mapped[str] = mapped_column(String); category: Mapped[str] = mapped_column(String); side: Mapped[str] = mapped_column(String, default='both'); amount: Mapped[int] = mapped_column(Integer, default=0); paid_amount: Mapped[int] = mapped_column(Integer, default=0)
+class Attachment(Base):
+    __tablename__ = 'attachments'; id: Mapped[int] = mapped_column(primary_key=True); owner_type: Mapped[str] = mapped_column(String); owner_id: Mapped[int] = mapped_column(Integer); filename: Mapped[str] = mapped_column(String); mime_type: Mapped[str] = mapped_column(String); storage_path: Mapped[str] = mapped_column(String, unique=True); created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 class Login(BaseModel): username: str; password: str
 class TaskIn(BaseModel): title: str = Field(min_length=1, max_length=200); assignee_name: str|None = None; due_date: date|None = None; event_id: int|None = None; status: Literal['open','done'] = 'open'
@@ -45,7 +48,7 @@ class GuestIn(BaseModel): name: str = Field(min_length=1, max_length=160); side:
 class InvitationIn(BaseModel): guest_id: int; all_events: bool = False; event_ids: list[int] = []
 class GuestUpdateIn(BaseModel): name: str = Field(min_length=1, max_length=160); side: Literal['bride','groom']; all_events: bool = False; event_ids: list[int] = []
 class VendorIn(BaseModel): name: str = Field(min_length=1, max_length=160); category: str = Field(min_length=1, max_length=80); side: Literal['bride','groom','both'] = 'both'; amount: int = Field(ge=0); paid_amount: int = Field(ge=0)
-class EventIn(BaseModel): name: str = Field(min_length=1, max_length=120); date: date; time_note: str = Field(default='', max_length=120); venue: str = Field(default='', max_length=200)
+class EventIn(BaseModel): name: str = Field(min_length=1, max_length=120); date: date; time_note: str = Field(default='', max_length=120); venue: str = Field(default='', max_length=200); side: Literal['bride','groom','both'] = 'both'
 class RsvpIn(BaseModel): statuses: dict[int, Literal['pending','accepted','declined']]; note: str|None = None
 
 app = FastAPI(title='Sumit & Puja Wedding API')
@@ -54,19 +57,24 @@ EVENTS = [('tilak','Lagan & Tilak','2026-11-28',''),('haldi','Haldi & Matkor','2
 
 @app.on_event('startup')
 def startup():
-    Path('data').mkdir(exist_ok=True); Base.metadata.create_all(engine)
+    Path('data/uploads').mkdir(parents=True,exist_ok=True); Base.metadata.create_all(engine)
     with engine.begin() as connection:
         guest_columns = {row[1] for row in connection.exec_driver_sql('PRAGMA table_info(guests)')}
         event_columns = {row[1] for row in connection.exec_driver_sql('PRAGMA table_info(events)')}
         vendor_columns = {row[1] for row in connection.exec_driver_sql('PRAGMA table_info(vendors)')}
         if 'side' not in guest_columns: connection.exec_driver_sql("ALTER TABLE guests ADD COLUMN side VARCHAR NOT NULL DEFAULT 'groom'")
         if 'venue' not in event_columns: connection.exec_driver_sql("ALTER TABLE events ADD COLUMN venue VARCHAR NOT NULL DEFAULT ''")
+        event_side_added = 'side' not in event_columns
+        if event_side_added: connection.exec_driver_sql("ALTER TABLE events ADD COLUMN side VARCHAR NOT NULL DEFAULT 'both'")
         if 'side' not in vendor_columns: connection.exec_driver_sql("ALTER TABLE vendors ADD COLUMN side VARCHAR NOT NULL DEFAULT 'both'")
     with SessionLocal() as s:
         vidai = s.scalar(select(Event).where(Event.slug == 'vidai')); wedding = s.scalar(select(Event).where(Event.slug == 'wedding'))
         if vidai and wedding:
             for invitation_event in s.scalars(select(InvitationEvent).where(InvitationEvent.event_id == vidai.id)): invitation_event.event_id = wedding.id
             s.delete(vidai); s.commit()
+        if event_side_added:
+            for event in s.scalars(select(Event)): event.side = 'groom' if event.slug == 'reception' else 'both'
+            s.commit()
         if not s.scalar(select(Event.id).limit(1)):
             s.add_all([Event(slug=a,name=b,event_date=date.fromisoformat(c),time_note=d) for a,b,c,d in EVENTS]); s.commit()
 def db():
@@ -80,8 +88,10 @@ def user(wedding_session: str|None=Cookie(default=None)):
     if name != USERNAME: raise HTTPException(401,'Sign in required')
     return name
 def audit(s, actor, action): s.add(Activity(actor=actor,action=action)); s.commit()
-def event_json(e): return {'id':e.id,'slug':e.slug,'name':e.name,'date':e.event_date.isoformat(),'time_note':e.time_note,'venue':e.venue}
-def vendor_json(v): return {'id':v.id,'name':v.name,'category':v.category,'side':v.side,'amount':v.amount,'paid_amount':v.paid_amount}
+def attachment_json(a): return {'id':a.id,'filename':a.filename,'mime_type':a.mime_type,'url':f'/attachments/{a.id}'}
+def attachments_json(s, owner_type, owner_id): return [attachment_json(a) for a in s.scalars(select(Attachment).where(Attachment.owner_type == owner_type, Attachment.owner_id == owner_id).order_by(Attachment.created_at))]
+def event_json(e,s): return {'id':e.id,'slug':e.slug,'name':e.name,'date':e.event_date.isoformat(),'time_note':e.time_note,'venue':e.venue,'side':e.side,'attachments':attachments_json(s,'event',e.id)}
+def vendor_json(v,s): return {'id':v.id,'name':v.name,'category':v.category,'side':v.side,'amount':v.amount,'paid_amount':v.paid_amount,'attachments':attachments_json(s,'vendor',v.id)}
 def event_slug(name): return re.sub(r'[^a-z0-9]+','-',name.lower()).strip('-') or 'function'
 
 @app.get('/health')
@@ -96,27 +106,31 @@ def logout(response:Response): response.delete_cookie('wedding_session'); return
 @app.get('/auth/me')
 def me(name:str=Depends(user)): return {'username':name}
 @app.get('/events')
-def events(_:str=Depends(user), s:Session=Depends(db)): return [event_json(e) for e in s.scalars(select(Event).order_by(Event.event_date))]
+def events(_:str=Depends(user), s:Session=Depends(db)): return [event_json(e,s) for e in s.scalars(select(Event).order_by(Event.event_date))]
 @app.get('/public/events')
-def public_events(s:Session=Depends(db)): return [event_json(e) for e in s.scalars(select(Event).order_by(Event.event_date))]
+def public_events(s:Session=Depends(db)): return [event_json(e,s) for e in s.scalars(select(Event).order_by(Event.event_date))]
 @app.post('/events')
 def add_event(data:EventIn,name:str=Depends(user),s:Session=Depends(db)):
     base=event_slug(data.name); slug=base; suffix=2
     while s.scalar(select(Event.id).where(Event.slug == slug)): slug=f'{base}-{suffix}'; suffix+=1
-    event=Event(slug=slug,name=data.name,event_date=data.date,time_note=data.time_note,venue=data.venue); s.add(event); s.flush()
+    event=Event(slug=slug,name=data.name,event_date=data.date,time_note=data.time_note,venue=data.venue,side=data.side); s.add(event); s.flush()
     for invitation in s.scalars(select(Invitation).where(Invitation.all_events == True)): s.add(InvitationEvent(invitation_id=invitation.id,event_id=event.id))
-    s.commit(); s.refresh(event); audit(s,name,f'Added event: {event.name}'); return event_json(event)
+    s.commit(); s.refresh(event); audit(s,name,f'Added event: {event.name}'); return event_json(event,s)
 @app.patch('/events/{event_id}')
 def update_event(event_id:int,data:EventIn,name:str=Depends(user),s:Session=Depends(db)):
     event=s.get(Event,event_id)
     if not event: raise HTTPException(404,'Event not found')
-    event.name=data.name; event.event_date=data.date; event.time_note=data.time_note; event.venue=data.venue; s.commit(); audit(s,name,f'Updated event: {event.name}'); return event_json(event)
+    event.name=data.name; event.event_date=data.date; event.time_note=data.time_note; event.venue=data.venue; event.side=data.side; s.commit(); audit(s,name,f'Updated event: {event.name}'); return event_json(event,s)
 @app.delete('/events/{event_id}')
 def delete_event(event_id:int,name:str=Depends(user),s:Session=Depends(db)):
     event=s.get(Event,event_id)
     if not event: raise HTTPException(404,'Event not found')
     for invitation_event in s.scalars(select(InvitationEvent).where(InvitationEvent.event_id == event.id)): s.delete(invitation_event)
     for task in s.scalars(select(Task).where(Task.event_id == event.id)): task.event_id=None
+    for attachment in s.scalars(select(Attachment).where(Attachment.owner_type == 'event', Attachment.owner_id == event.id)):
+        path=Path('data',attachment.storage_path)
+        if path.is_file(): path.unlink()
+        s.delete(attachment)
     event_name=event.name; s.delete(event); s.commit(); audit(s,name,f'Removed event: {event_name}'); return {'ok':True}
 @app.get('/tasks')
 def tasks(_:str=Depends(user),s:Session=Depends(db)): return [{'id':t.id,'title':t.title,'assignee_name':t.assignee_name,'due_date':t.due_date.isoformat() if t.due_date else None,'event_id':t.event_id,'status':t.status} for t in s.scalars(select(Task).order_by(Task.created_at.desc()))]
@@ -159,23 +173,52 @@ def guest_summary(_:str=Depends(user),s:Session=Depends(db)):
     event_totals = []
     for event in s.scalars(select(Event).order_by(Event.event_date)):
         guest_ids = s.scalars(select(Invitation.guest_id).join(InvitationEvent, InvitationEvent.invitation_id == Invitation.id).where(InvitationEvent.event_id == event.id)).all()
-        event_totals.append({**event_json(event), 'guest_count': len(set(guest_ids))})
+        event_totals.append({**event_json(event, s), 'guest_count': len(set(guest_ids))})
     return {'total': len(guests), 'bride_total': sum(g.side == 'bride' for g in guests), 'groom_total': sum(g.side == 'groom' for g in guests), 'events': event_totals}
 @app.get('/vendors')
-def vendors(_:str=Depends(user),s:Session=Depends(db)): return [vendor_json(v) for v in s.scalars(select(Vendor).order_by(Vendor.name))]
+def vendors(_:str=Depends(user),s:Session=Depends(db)): return [vendor_json(v,s) for v in s.scalars(select(Vendor).order_by(Vendor.name))]
 @app.post('/vendors')
 def add_vendor(data:VendorIn,name:str=Depends(user),s:Session=Depends(db)):
-    vendor=Vendor(**data.model_dump()); s.add(vendor); s.commit(); s.refresh(vendor); audit(s,name,f'Added vendor: {vendor.name}'); return vendor_json(vendor)
+    vendor=Vendor(**data.model_dump()); s.add(vendor); s.commit(); s.refresh(vendor); audit(s,name,f'Added vendor: {vendor.name}'); return vendor_json(vendor,s)
 @app.patch('/vendors/{vendor_id}')
 def update_vendor(vendor_id:int,data:VendorIn,name:str=Depends(user),s:Session=Depends(db)):
     vendor=s.get(Vendor,vendor_id)
     if not vendor: raise HTTPException(404,'Vendor not found')
     for key,value in data.model_dump().items(): setattr(vendor,key,value)
-    s.commit(); audit(s,name,f'Updated vendor: {vendor.name}'); return vendor_json(vendor)
+    s.commit(); audit(s,name,f'Updated vendor: {vendor.name}'); return vendor_json(vendor,s)
 @app.get('/budget-summary')
 def budget_summary(_:str=Depends(user),s:Session=Depends(db)):
     vendors=list(s.scalars(select(Vendor))); planned=sum(v.amount for v in vendors); paid=sum(v.paid_amount for v in vendors)
     return {'planned_total':planned,'paid_total':paid,'due_total':planned-paid}
+async def save_attachment(owner_type, owner_id, file, actor, s):
+    owner = s.get(Vendor if owner_type == 'vendor' else Event, owner_id)
+    if not owner: raise HTTPException(404,'Owner not found')
+    allowed = {'image/jpeg':'.jpg','image/png':'.png','image/webp':'.webp'}
+    if file.content_type not in allowed: raise HTTPException(422,'Use a JPG, PNG, or WebP image')
+    content = await file.read()
+    if not content or len(content) > 8 * 1024 * 1024: raise HTTPException(422,'Image must be between 1 byte and 8 MB')
+    relative_path = f'uploads/{uuid4().hex}{allowed[file.content_type]}'
+    Path('data',relative_path).write_bytes(content)
+    attachment=Attachment(owner_type=owner_type,owner_id=owner_id,filename=file.filename or 'image',mime_type=file.content_type,storage_path=relative_path); s.add(attachment); s.commit(); s.refresh(attachment); audit(s,actor,f'Added {owner_type} image')
+    return attachment_json(attachment)
+@app.post('/vendors/{vendor_id}/attachments')
+async def add_vendor_attachment(vendor_id:int,file:UploadFile=File(...),name:str=Depends(user),s:Session=Depends(db)): return await save_attachment('vendor',vendor_id,file,name,s)
+@app.post('/events/{event_id}/attachments')
+async def add_event_attachment(event_id:int,file:UploadFile=File(...),name:str=Depends(user),s:Session=Depends(db)): return await save_attachment('event',event_id,file,name,s)
+@app.get('/attachments/{attachment_id}')
+def attachment_file(attachment_id:int,_:str=Depends(user),s:Session=Depends(db)):
+    attachment=s.get(Attachment,attachment_id)
+    if not attachment: raise HTTPException(404,'Attachment not found')
+    path=Path('data',attachment.storage_path)
+    if not path.is_file(): raise HTTPException(404,'Attachment not found')
+    return FileResponse(path,media_type=attachment.mime_type,filename=attachment.filename)
+@app.delete('/attachments/{attachment_id}')
+def delete_attachment(attachment_id:int,name:str=Depends(user),s:Session=Depends(db)):
+    attachment=s.get(Attachment,attachment_id)
+    if not attachment: raise HTTPException(404,'Attachment not found')
+    path=Path('data',attachment.storage_path)
+    if path.is_file(): path.unlink()
+    s.delete(attachment); s.commit(); audit(s,name,'Removed attachment'); return {'ok':True}
 @app.post('/invitations')
 def invite(data:InvitationIn,name:str=Depends(user),s:Session=Depends(db)):
     if not s.get(Guest,data.guest_id): raise HTTPException(404,'Guest not found')
@@ -186,7 +229,7 @@ def invite(data:InvitationIn,name:str=Depends(user),s:Session=Depends(db)):
 def get_rsvp(token:str,s:Session=Depends(db)):
     i=s.scalar(select(Invitation).where(Invitation.token==token));
     if not i: raise HTTPException(404,'Invitation not found')
-    g=s.get(Guest,i.guest_id); rows=s.scalars(select(InvitationEvent).where(InvitationEvent.invitation_id==i.id)).all(); return {'guest_name':g.name,'note':g.note,'events':[dict(event_json(s.get(Event,r.event_id)),status=r.status) for r in rows]}
+    g=s.get(Guest,i.guest_id); rows=s.scalars(select(InvitationEvent).where(InvitationEvent.invitation_id==i.id)).all(); return {'guest_name':g.name,'note':g.note,'events':[dict(event_json(s.get(Event,r.event_id),s),status=r.status) for r in rows]}
 @app.post('/rsvp/{token}')
 def post_rsvp(token:str,data:RsvpIn,s:Session=Depends(db)):
     i=s.scalar(select(Invitation).where(Invitation.token==token));

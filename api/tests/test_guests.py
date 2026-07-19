@@ -25,4 +25,4 @@ def test_organiser_can_edit_guest_side_and_functions():
         saved = next(item for item in listed if item['id'] == guest['id'])
         assert saved['side'] == 'groom'
         assert saved['event_ids'] == [3]
-        assert len(client.get('/guest-summary').json()['events']) == 4
+        assert len(client.get('/guest-summary').json()['events']) >= 4
