@@ -37,7 +37,7 @@ class InvitationEvent(Base):
 class Activity(Base):
     __tablename__ = 'activity'; id: Mapped[int] = mapped_column(primary_key=True); actor: Mapped[str] = mapped_column(String); action: Mapped[str] = mapped_column(String); created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 class Vendor(Base):
-    __tablename__ = 'vendors'; id: Mapped[int] = mapped_column(primary_key=True); name: Mapped[str] = mapped_column(String); category: Mapped[str] = mapped_column(String); side: Mapped[str] = mapped_column(String, default='both'); amount: Mapped[int] = mapped_column(Integer, default=0); paid_amount: Mapped[int] = mapped_column(Integer, default=0)
+    __tablename__ = 'vendors'; id: Mapped[int] = mapped_column(primary_key=True); name: Mapped[str] = mapped_column(String); category: Mapped[str] = mapped_column(String); phone: Mapped[str] = mapped_column(String, default=''); side: Mapped[str] = mapped_column(String, default='both'); amount: Mapped[int] = mapped_column(Integer, default=0); paid_amount: Mapped[int] = mapped_column(Integer, default=0)
 class Attachment(Base):
     __tablename__ = 'attachments'; id: Mapped[int] = mapped_column(primary_key=True); owner_type: Mapped[str] = mapped_column(String); owner_id: Mapped[int] = mapped_column(Integer); filename: Mapped[str] = mapped_column(String); mime_type: Mapped[str] = mapped_column(String); storage_path: Mapped[str] = mapped_column(String, unique=True); created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
@@ -47,7 +47,7 @@ class TaskUpdateIn(BaseModel): title: str|None = Field(default=None, min_length=
 class GuestIn(BaseModel): name: str = Field(min_length=1, max_length=160); side: Literal['bride','groom'] = 'groom'; phone: str|None = None; note: str = ''
 class InvitationIn(BaseModel): guest_id: int; all_events: bool = False; event_ids: list[int] = []
 class GuestUpdateIn(BaseModel): name: str = Field(min_length=1, max_length=160); side: Literal['bride','groom']; all_events: bool = False; event_ids: list[int] = []
-class VendorIn(BaseModel): name: str = Field(min_length=1, max_length=160); category: str = Field(min_length=1, max_length=80); side: Literal['bride','groom','both'] = 'both'; amount: int = Field(ge=0); paid_amount: int = Field(ge=0)
+class VendorIn(BaseModel): name: str = Field(min_length=1, max_length=160); category: str = Field(min_length=1, max_length=80); phone: str = Field(default='', max_length=60); side: Literal['bride','groom','both'] = 'both'; amount: int = Field(ge=0); paid_amount: int = Field(ge=0)
 class EventIn(BaseModel): name: str = Field(min_length=1, max_length=120); date: date; time_note: str = Field(default='', max_length=120); venue: str = Field(default='', max_length=200); side: Literal['bride','groom','both'] = 'both'
 class RsvpIn(BaseModel): statuses: dict[int, Literal['pending','accepted','declined']]; note: str|None = None
 
@@ -67,6 +67,7 @@ def startup():
         event_side_added = 'side' not in event_columns
         if event_side_added: connection.exec_driver_sql("ALTER TABLE events ADD COLUMN side VARCHAR NOT NULL DEFAULT 'both'")
         if 'side' not in vendor_columns: connection.exec_driver_sql("ALTER TABLE vendors ADD COLUMN side VARCHAR NOT NULL DEFAULT 'both'")
+        if 'phone' not in vendor_columns: connection.exec_driver_sql("ALTER TABLE vendors ADD COLUMN phone VARCHAR NOT NULL DEFAULT ''")
     with SessionLocal() as s:
         vidai = s.scalar(select(Event).where(Event.slug == 'vidai')); wedding = s.scalar(select(Event).where(Event.slug == 'wedding'))
         if vidai and wedding:
@@ -91,7 +92,7 @@ def audit(s, actor, action): s.add(Activity(actor=actor,action=action)); s.commi
 def attachment_json(a): return {'id':a.id,'filename':a.filename,'mime_type':a.mime_type,'url':f'/attachments/{a.id}'}
 def attachments_json(s, owner_type, owner_id): return [attachment_json(a) for a in s.scalars(select(Attachment).where(Attachment.owner_type == owner_type, Attachment.owner_id == owner_id).order_by(Attachment.created_at))]
 def event_json(e,s): return {'id':e.id,'slug':e.slug,'name':e.name,'date':e.event_date.isoformat(),'time_note':e.time_note,'venue':e.venue,'side':e.side,'attachments':attachments_json(s,'event',e.id)}
-def vendor_json(v,s): return {'id':v.id,'name':v.name,'category':v.category,'side':v.side,'amount':v.amount,'paid_amount':v.paid_amount,'attachments':attachments_json(s,'vendor',v.id)}
+def vendor_json(v,s): return {'id':v.id,'name':v.name,'category':v.category,'phone':v.phone,'side':v.side,'amount':v.amount,'paid_amount':v.paid_amount,'attachments':attachments_json(s,'vendor',v.id)}
 def event_slug(name): return re.sub(r'[^a-z0-9]+','-',name.lower()).strip('-') or 'function'
 
 @app.get('/health')
