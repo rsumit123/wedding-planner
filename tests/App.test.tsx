@@ -35,10 +35,13 @@ it('opens the real budget manager from the home-page shortcut', async () => {
   vi.spyOn(api, 'login').mockResolvedValue({ username: 'sumit-puja' });
   vi.spyOn(api, 'tasks').mockResolvedValue([]);
   vi.spyOn(api, 'events').mockResolvedValue([]);
+  vi.spyOn(api, 'vendors').mockResolvedValue([]);
+  vi.spyOn(api, 'budgetSummary').mockResolvedValue({ planned_total: 0, paid_total: 0, due_total: 0 });
   render(<App />);
   await user.click(screen.getByRole('button', { name: /planner login/i }));
   await user.click(await screen.findByRole('button', { name: 'Open budget and vendors' }));
   expect(screen.getByRole('heading', { name: /budget, clearly held/i })).toBeVisible();
+  expect(screen.getByLabelText(/receipt image/i)).toHaveAttribute('type', 'file');
 });
 
 it('brings the guest edit form into view after tapping a guest pencil', async () => {
