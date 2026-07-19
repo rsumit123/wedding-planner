@@ -82,6 +82,12 @@ def tasks(_:str=Depends(user),s:Session=Depends(db)): return [{'id':t.id,'title'
 @app.post('/tasks')
 def add_task(data:TaskIn,name:str=Depends(user),s:Session=Depends(db)):
     t=Task(**data.model_dump());s.add(t);s.commit();s.refresh(t);audit(s,name,f'Created task: {t.title}');return {'id':t.id,'title':t.title,'status':t.status}
+@app.patch('/tasks/{task_id}')
+def update_task(task_id:int,data:TaskIn,name:str=Depends(user),s:Session=Depends(db)):
+    t=s.get(Task,task_id)
+    if not t: raise HTTPException(404,'Task not found')
+    for key,value in data.model_dump().items(): setattr(t,key,value)
+    s.commit();audit(s,name,f'Updated task: {t.title}');return {'id':t.id,'title':t.title,'status':t.status}
 @app.get('/guests')
 def guests(_:str=Depends(user),s:Session=Depends(db)): return [{'id':g.id,'name':g.name,'phone':g.phone,'note':g.note} for g in s.scalars(select(Guest).order_by(Guest.name))]
 @app.post('/guests')
