@@ -27,7 +27,7 @@ class Event(Base):
 class Task(Base):
     __tablename__ = 'tasks'; id: Mapped[int] = mapped_column(primary_key=True); title: Mapped[str] = mapped_column(String); assignee_name: Mapped[str|None] = mapped_column(String, nullable=True); due_date: Mapped[date|None] = mapped_column(Date, nullable=True); event_id: Mapped[int|None] = mapped_column(ForeignKey('events.id'), nullable=True); status: Mapped[str] = mapped_column(String, default='open'); created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 class Guest(Base):
-    __tablename__ = 'guests'; id: Mapped[int] = mapped_column(primary_key=True); name: Mapped[str] = mapped_column(String); phone: Mapped[str|None] = mapped_column(String, nullable=True); note: Mapped[str] = mapped_column(String, default='')
+    __tablename__ = 'guests'; id: Mapped[int] = mapped_column(primary_key=True); name: Mapped[str] = mapped_column(String); side: Mapped[str] = mapped_column(String, default='groom'); phone: Mapped[str|None] = mapped_column(String, nullable=True); note: Mapped[str] = mapped_column(String, default='')
 class Invitation(Base):
     __tablename__ = 'invitations'; id: Mapped[int] = mapped_column(primary_key=True); guest_id: Mapped[int] = mapped_column(ForeignKey('guests.id')); token: Mapped[str] = mapped_column(String, unique=True); all_events: Mapped[bool] = mapped_column(Boolean, default=False)
 class InvitationEvent(Base):
@@ -37,7 +37,7 @@ class Activity(Base):
 
 class Login(BaseModel): username: str; password: str
 class TaskIn(BaseModel): title: str = Field(min_length=1, max_length=200); assignee_name: str|None = None; due_date: date|None = None; event_id: int|None = None; status: Literal['open','done'] = 'open'
-class GuestIn(BaseModel): name: str = Field(min_length=1, max_length=160); phone: str|None = None; note: str = ''
+class GuestIn(BaseModel): name: str = Field(min_length=1, max_length=160); side: Literal['bride','groom'] = 'groom'; phone: str|None = None; note: str = ''
 class InvitationIn(BaseModel): guest_id: int; all_events: bool = False; event_ids: list[int] = []
 class RsvpIn(BaseModel): statuses: dict[int, Literal['pending','accepted','declined']]; note: str|None = None
 
@@ -48,6 +48,9 @@ EVENTS = [('tilak','Lagan & Tilak','2026-11-28',''),('haldi','Haldi & Matkor','2
 @app.on_event('startup')
 def startup():
     Path('data').mkdir(exist_ok=True); Base.metadata.create_all(engine)
+    with engine.begin() as connection:
+        columns = {row[1] for row in connection.exec_driver_sql('PRAGMA table_info(guests)')}
+        if 'side' not in columns: connection.exec_driver_sql("ALTER TABLE guests ADD COLUMN side VARCHAR NOT NULL DEFAULT 'groom'")
     with SessionLocal() as s:
         if not s.scalar(select(Event.id).limit(1)):
             s.add_all([Event(slug=a,name=b,event_date=date.fromisoformat(c),time_note=d) for a,b,c,d in EVENTS]); s.commit()
@@ -89,10 +92,18 @@ def update_task(task_id:int,data:TaskIn,name:str=Depends(user),s:Session=Depends
     for key,value in data.model_dump().items(): setattr(t,key,value)
     s.commit();audit(s,name,f'Updated task: {t.title}');return {'id':t.id,'title':t.title,'status':t.status}
 @app.get('/guests')
-def guests(_:str=Depends(user),s:Session=Depends(db)): return [{'id':g.id,'name':g.name,'phone':g.phone,'note':g.note} for g in s.scalars(select(Guest).order_by(Guest.name))]
+def guests(_:str=Depends(user),s:Session=Depends(db)): return [{'id':g.id,'name':g.name,'side':g.side,'phone':g.phone,'note':g.note} for g in s.scalars(select(Guest).order_by(Guest.name))]
 @app.post('/guests')
 def add_guest(data:GuestIn,name:str=Depends(user),s:Session=Depends(db)):
-    g=Guest(**data.model_dump());s.add(g);s.commit();s.refresh(g);audit(s,name,f'Added guest: {g.name}');return {'id':g.id,'name':g.name}
+    g=Guest(**data.model_dump());s.add(g);s.commit();s.refresh(g);audit(s,name,f'Added guest: {g.name}');return {'id':g.id,'name':g.name,'side':g.side,'phone':g.phone,'note':g.note}
+@app.get('/guest-summary')
+def guest_summary(_:str=Depends(user),s:Session=Depends(db)):
+    guests = list(s.scalars(select(Guest)))
+    event_totals = []
+    for event in s.scalars(select(Event).order_by(Event.event_date)):
+        guest_ids = s.scalars(select(Invitation.guest_id).join(InvitationEvent, InvitationEvent.invitation_id == Invitation.id).where(InvitationEvent.event_id == event.id)).all()
+        event_totals.append({**event_json(event), 'guest_count': len(set(guest_ids))})
+    return {'total': len(guests), 'bride_total': sum(g.side == 'bride' for g in guests), 'groom_total': sum(g.side == 'groom' for g in guests), 'events': event_totals}
 @app.post('/invitations')
 def invite(data:InvitationIn,name:str=Depends(user),s:Session=Depends(db)):
     if not s.get(Guest,data.guest_id): raise HTTPException(404,'Guest not found')

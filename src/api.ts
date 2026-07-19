@@ -1,6 +1,9 @@
 const API = 'https://wedding-api.skdev.one';
 
 export type ApiTask = { id: number; title: string; assignee_name: string | null; due_date: string | null; event_id: number | null; status: 'open' | 'done' };
+export type ApiGuest = { id: number; name: string; side: 'bride' | 'groom'; phone: string | null; note: string };
+export type ApiEvent = { id: number; slug: string; name: string; date: string; time_note: string };
+export type GuestSummary = { total: number; bride_total: number; groom_total: number; events: Array<ApiEvent & { guest_count: number }> };
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API}${path}`, { credentials: 'include', headers: { 'Content-Type': 'application/json', ...(init.headers ?? {}) }, ...init });
@@ -15,4 +18,9 @@ export const api = {
   tasks: () => request<ApiTask[]>('/tasks'),
   addTask: (title: string) => request<ApiTask>('/tasks', { method: 'POST', body: JSON.stringify({ title }) }),
   updateTask: (id: number, status: 'open' | 'done') => request<ApiTask>(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify({ status }) }),
+  guests: () => request<ApiGuest[]>('/guests'),
+  events: () => request<ApiEvent[]>('/events'),
+  summary: () => request<GuestSummary>('/guest-summary'),
+  addGuest: (name: string, side: 'bride' | 'groom') => request<ApiGuest>('/guests', { method: 'POST', body: JSON.stringify({ name, side }) }),
+  inviteGuest: (guestId: number, allEvents: boolean, eventIds: number[]) => request<{ id: number; token: string }>('/invitations', { method: 'POST', body: JSON.stringify({ guest_id: guestId, all_events: allEvents, event_ids: eventIds }) }),
 };

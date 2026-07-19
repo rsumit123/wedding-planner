@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { CalendarDays, CheckCircle2, ChevronRight, CircleDollarSign, MapPin, Plus, UsersRound } from 'lucide-react';
 import couplePhoto from './assets/sumit-puja-wedding.png';
 import { EventIcon, type EventIconKind } from './components/EventIcon';
-import { api } from './api';
+import { api, type ApiEvent, type ApiGuest, type GuestSummary } from './api';
 
 type Event = { date: string; day: string; title: string; note: string; icon: EventIconKind; accent: string };
 const events: Event[] = [
@@ -49,7 +49,7 @@ export default function App() {
     <main className="workspace">
       <section className="hero"><div className="hero-copy"><p className="eyebrow">Our wedding planner</p><h1>Sumit <em>&amp;</em> Puja</h1><p className="hero-sub">Five beautiful days. One shared place to make every detail feel easy.</p><div className="hero-actions"><button className="ghost-button" onClick={() => setPage('Events')}><CalendarDays size={17}/> View celebrations</button><button className="ghost-button" onClick={() => setPage('Guest page')}>Guest page <ChevronRight size={16}/></button></div></div><div className="hero-art"><img src={couplePhoto} alt="Sumit and Puja in their wedding outfits" /></div></section>
       <div className="mobile-nav">{nav.map(item => <button key={item} onClick={() => setPage(item)} className={page === item ? 'selected' : ''}>{item}</button>)}</div>
-      {page === 'Today' ? <Dashboard days={days} tasks={tasks} draft={draft} setDraft={setDraft} addTask={addTask} toggleTask={toggleTask} /> : <Section page={page} />}
+      {page === 'Today' ? <Dashboard days={days} tasks={tasks} draft={draft} setDraft={setDraft} addTask={addTask} toggleTask={toggleTask} /> : page === 'Guests & RSVPs' ? <GuestManager /> : <Section page={page} />}
     </main>
   </div>;
 }
@@ -63,5 +63,19 @@ function Dashboard({ days, tasks, draft, setDraft, addTask, toggleTask }: { days
 }
 
 function Section({ page }: { page: string }) { return <section className="placeholder-page"><p className="eyebrow ink">{page}</p><h2>{page === 'Events' ? 'Every celebration, in one rhythm.' : `${page}, beautifully organised.`}</h2><p>This section is ready for your family’s details. For now, use Today to add shared tasks and open the guest page preview.</p>{page === 'Events' && <div className="event-list">{events.map(e => <div key={e.title}><EventIcon kind={e.icon} label={e.title}/><span><strong>{e.title}</strong><small>{e.day} {e.date}, 2026 · {e.note}</small></span></div>)}</div>}</section>; }
+
+function GuestManager() {
+  const [guests, setGuests] = useState<ApiGuest[]>([]); const [summary, setSummary] = useState<GuestSummary | null>(null); const [eventList, setEventList] = useState<ApiEvent[]>([]);
+  const [name, setName] = useState(''); const [side, setSide] = useState<'bride' | 'groom'>('bride'); const [allEvents, setAllEvents] = useState(true); const [selected, setSelected] = useState<number[]>([]); const [error, setError] = useState(''); const [saving, setSaving] = useState(false);
+  const load = async () => { const [nextGuests, nextSummary, nextEvents] = await Promise.all([api.guests(), api.summary(), api.events()]); setGuests(nextGuests); setSummary(nextSummary); setEventList(nextEvents); };
+  useEffect(() => { load().catch(e => setError((e as Error).message)); }, []);
+  const toggleEvent = (id: number) => setSelected(current => current.includes(id) ? current.filter(eventId => eventId !== id) : [...current, id]);
+  const save = async (event: React.FormEvent) => { event.preventDefault(); if (!name.trim() || (!allEvents && !selected.length)) return; setSaving(true); setError(''); try { const guest = await api.addGuest(name.trim(), side); await api.inviteGuest(guest.id, allEvents, selected); setName(''); setSelected([]); await load(); } catch (e) { setError((e as Error).message); } finally { setSaving(false); } };
+  return <section className="guest-manager"><div className="guest-heading"><div><p className="eyebrow ink">Guests &amp; invitations</p><h2>Everyone has a place at the celebration.</h2><p>Add family from either side, then choose the functions they are invited to.</p></div></div>
+    <div className="guest-totals"><article><small>Total invited</small><strong>{summary?.total ?? '—'}</strong></article><article><small>Bride’s side</small><strong>{summary?.bride_total ?? '—'}</strong></article><article><small>Groom’s side</small><strong>{summary?.groom_total ?? '—'}</strong></article></div>
+    <div className="guest-layout"><form className="guest-form" onSubmit={save}><h3>Add a guest or family</h3><label>Guest or family name<input value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Sharma family" required /></label><fieldset><legend>Family side</legend><label className="side-choice"><input type="radio" checked={side === 'bride'} onChange={() => setSide('bride')} /> Bride’s side</label><label className="side-choice"><input type="radio" checked={side === 'groom'} onChange={() => setSide('groom')} /> Groom’s side</label></fieldset><fieldset><legend>Invite them to</legend><label className="side-choice"><input type="checkbox" checked={allEvents} onChange={e => setAllEvents(e.target.checked)} /> All functions</label>{!allEvents && <div className="event-checks">{eventList.map(event => <label key={event.id}><input type="checkbox" checked={selected.includes(event.id)} onChange={() => toggleEvent(event.id)} /> {event.name}</label>)}</div>}</fieldset><button className="add-button" disabled={saving} type="submit">{saving ? 'Saving…' : 'Add to guest list'}</button>{error && <p className="form-error" role="alert">{error}</p>}</form>
+      <div className="guest-details"><div><p className="eyebrow ink">Function totals</p><h3>Guest count by ceremony</h3></div><div className="function-totals">{summary?.events.map(event => <article key={event.id}><span>{event.name}</span><strong>{event.guest_count}</strong><small>{new Date(`${event.date}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })}</small></article>)}</div><div className="guest-list"><p className="eyebrow ink">Your list</p>{guests.length ? guests.map(guest => <div key={guest.id}><span><strong>{guest.name}</strong><small>{guest.side === 'bride' ? 'Bride’s side' : 'Groom’s side'}</small></span><b>{guest.side === 'bride' ? 'Bride' : 'Groom'}</b></div>) : <p className="empty-state">Your first guest will appear here.</p>}</div></div></div>
+  </section>;
+}
 
 function InvitePage({ onBack }: { onBack: () => void }) { return <div className="invite"><header><button onClick={onBack}>← Planner</button><span>SUMIT &amp; PUJA</span></header><section className="invite-hero"><div><p className="eyebrow">With the blessings of our families</p><h1>Sumit <em>&amp;</em> Puja</h1><p>Invite you to celebrate a new beginning.</p><button><MapPin size={17}/> Venue details coming soon</button></div><img src={couplePhoto} alt="Sumit and Puja in their wedding outfits"/></section><section className="invite-events"><p className="eyebrow ink">The celebrations</p><h2>Come celebrate with us</h2><div>{events.map(e => <article key={e.title}><span className="event-icon"><EventIcon kind={e.icon} label={e.title}/></span><span><strong>{e.title}</strong><small>{e.date} {e.day} · {e.note}</small></span></article>)}</div><a href="https://wa.me/" target="_blank">Questions? Message the family on WhatsApp</a></section></div>; }

@@ -11,3 +11,5 @@ api/.venv/
 api/.pytest_cache/
 api/data/
 api/.env
+__pycache__/
+*.pyc
