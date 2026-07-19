@@ -1,0 +1,27 @@
+@media (max-width: 600px) {
+  .hero {
+    min-height: 585px;
+    padding: 41px 24px 0;
+  }
+
+  .hero-copy {
+    max-width: none;
+    position: relative;
+    z-index: 2;
+  }
+
+  .hero-art {
+    height: 270px;
+    width: calc(100% - 48px);
+    right: 24px;
+    bottom: 0;
+    opacity: 1;
+  }
+
+  .hero-art img {
+    object-fit: cover;
+    object-position: center 24%;
+    border-radius: 18px 18px 0 0;
+    border: 1px solid rgba(246, 191, 71, 0.75);
+  }
+}
