@@ -1,7 +1,31 @@
 @media (max-width: 600px) {
+  html,
+  body,
+  #root,
+  .app-shell,
+  .workspace {
+    width: 100%;
+    max-width: 100%;
+    overflow-x: clip;
+  }
+
+  .app-shell {
+    display: block;
+  }
+
+  .workspace {
+    margin-left: 0;
+  }
+
+  .mobile-nav {
+    max-width: 100%;
+  }
+
   .hero {
     min-height: 585px;
     padding: 41px 24px 0;
+    width: 100%;
+    max-width: 100%;
   }
 
   .hero-copy {
