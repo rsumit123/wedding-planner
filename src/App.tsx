@@ -1,69 +1,1272 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { CalendarDays, ChevronRight, CircleDollarSign, MapPin, Pencil, Plus, Trash2, UsersRound } from 'lucide-react';
-import couplePhoto from './assets/sumit-puja-wedding.png';
-import { EventIcon, type EventIconKind } from './components/EventIcon';
-import { api, type ApiEvent, type ApiGuest, type ApiTask, type ApiVendor, type Attachment, type BudgetSummary, type GuestSummary } from './api';
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  CalendarDays,
+  ChevronRight,
+  CircleDollarSign,
+  MapPin,
+  Pencil,
+  Plus,
+  Trash2,
+  UsersRound,
+} from "lucide-react";
+import couplePhoto from "./assets/sumit-puja-wedding.png";
+import { EventIcon, type EventIconKind } from "./components/EventIcon";
+import {
+  api,
+  type ApiEvent,
+  type ApiGuest,
+  type ApiTask,
+  type ApiVendor,
+  type Attachment,
+  type BudgetSummary,
+  type GuestSummary,
+} from "./api";
 
-const nav = ['Today', 'Tasks', 'Events', 'Guests & RSVPs', 'Budget & vendors', 'Public invite'];
+const nav = [
+  "Today",
+  "Tasks",
+  "Events",
+  "Guests & RSVPs",
+  "Budget & vendors",
+  "Public invite",
+];
 type UiTask = { id: number; text: string; meta: string; done: boolean };
-const money = (value: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 }).format(value);
-const eventKind = (event: ApiEvent): EventIconKind => ['tilak', 'haldi', 'wedding', 'reception'].includes(event.slug) ? event.slug as EventIconKind : 'generic';
-const eventDate = (date: string) => new Date(`${date}T00:00:00`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
-const taskFromApi = (task: ApiTask): UiTask => ({ id: task.id, text: task.title, meta: task.assignee_name ?? 'Shared family task', done: task.status === 'done' });
+const money = (value: number) =>
+  new Intl.NumberFormat("en-IN", {
+    style: "currency",
+    currency: "INR",
+    maximumFractionDigits: 0,
+  }).format(value);
+const eventKind = (event: ApiEvent): EventIconKind =>
+  ["tilak", "haldi", "wedding", "reception"].includes(event.slug)
+    ? (event.slug as EventIconKind)
+    : "generic";
+const eventDate = (date: string) =>
+  new Date(`${date}T00:00:00`).toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+  });
+const taskFromApi = (task: ApiTask): UiTask => ({
+  id: task.id,
+  text: task.title,
+  meta: task.assignee_name ?? "Shared family task",
+  done: task.status === "done",
+});
 
-function Login({ onSignedIn, error, setError }: { onSignedIn: () => Promise<void>; error: string; setError: (value: string) => void }) {
-  const [username, setUsername] = useState('sumit-puja'); const [password, setPassword] = useState(''); const [busy, setBusy] = useState(false);
-  const submit = async (event: React.FormEvent) => { event.preventDefault(); setBusy(true); setError(''); try { await api.login(username, password); await onSignedIn(); } catch (e) { setError((e as Error).message); } finally { setBusy(false); } };
-  return <main className="organiser-login"><section className="login-card"><div className="login-copy"><p className="eyebrow">Family organiser access</p><h1>Sumit <em>&amp;</em> Puja</h1><p>Sign in to keep every wedding detail together.</p></div><img src={couplePhoto} alt="Sumit and Puja in their wedding outfits"/><form onSubmit={submit}><label>Username<input aria-label="Username" value={username} onChange={e=>setUsername(e.target.value)}/></label><label>Password<input aria-label="Password" value={password} onChange={e=>setPassword(e.target.value)} type="password"/></label><button disabled={busy} type="submit">{busy ? 'Signing in…' : 'Sign in to planner'}</button>{error && <p role="alert">{error}</p>}</form></section></main>;
+function Login({
+  onSignedIn,
+  error,
+  setError,
+}: {
+  onSignedIn: () => Promise<void>;
+  error: string;
+  setError: (value: string) => void;
+}) {
+  const [username, setUsername] = useState("sumit-puja");
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const submit = async (event: React.FormEvent) => {
+    event.preventDefault();
+    setBusy(true);
+    setError("");
+    try {
+      await api.login(username, password);
+      await onSignedIn();
+    } catch (e) {
+      setError((e as Error).message);
+    } finally {
+      setBusy(false);
+    }
+  };
+  return (
+    <main className="organiser-login">
+      <section className="login-card">
+        <div className="login-copy">
+          <p className="eyebrow">Family organiser access</p>
+          <h1>
+            Sumit <em>&amp;</em> Puja
+          </h1>
+          <p>Sign in to keep every wedding detail together.</p>
+        </div>
+        <img src={couplePhoto} alt="Sumit and Puja in their wedding outfits" />
+        <form onSubmit={submit}>
+          <label>
+            Username
+            <input
+              aria-label="Username"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+            />
+          </label>
+          <label>
+            Password
+            <input
+              aria-label="Password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              type="password"
+            />
+          </label>
+          <button disabled={busy} type="submit">
+            {busy ? "Signing in…" : "Sign in to planner"}
+          </button>
+          {error && <p role="alert">{error}</p>}
+        </form>
+      </section>
+    </main>
+  );
 }
 
 export default function App() {
-  const [page, setPage] = useState('Today'); const [entryView, setEntryView] = useState<'public'|'login'|'planner'>('public'); const [tasks, setTasks] = useState<UiTask[]>([]); const [events, setEvents] = useState<ApiEvent[]>([]); const [draft, setDraft] = useState(''); const [signedIn, setSignedIn] = useState(false); const [error, setError] = useState('');
-  const days = useMemo(() => Math.max(0, Math.ceil((new Date('2026-12-01T13:06:00').getTime() - Date.now()) / 86400000)), []);
-  const load = async () => { const [remoteTasks, remoteEvents] = await Promise.all([api.tasks(), api.events()]); setTasks(remoteTasks.map(taskFromApi)); setEvents(remoteEvents); };
-  useEffect(() => { api.me().then(() => setSignedIn(true)).catch(() => undefined); }, []);
-  const openPlanner = () => { if (signedIn) { setEntryView('planner'); setPage('Today'); } else setEntryView('login'); };
-  const addTask = async () => { if (!draft.trim()) return; try { await api.addTask(draft.trim()); setDraft(''); await load(); } catch (e) { setError((e as Error).message); } };
-  const toggleTask = async (task: UiTask) => { try { await api.updateTask(task.id, task.done ? 'open' : 'done'); await load(); } catch (e) { setError((e as Error).message); } };
-  if (entryView === 'public' || page === 'Public invite') return <InvitePage onPlannerLogin={openPlanner} />;
-  if (entryView === 'login' || !signedIn) return <Login onSignedIn={async () => { setSignedIn(true); await load(); setEntryView('planner'); setPage('Today'); }} error={error} setError={setError} />;
-  return <div className="app-shell"><aside className="sidebar"><div className="side-brand"><span className="mini-rangoli">✦</span><span>SUMIT &amp; PUJA</span></div><nav>{nav.map(item => <button key={item} className={page === item ? 'nav-item active' : 'nav-item'} onClick={() => setPage(item)}>{item === 'Today' && <span className="nav-dot" />}{item}</button>)}</nav><div className="side-footer"><span>Wedding week</span><strong>28 Nov — 3 Dec</strong></div></aside><main className="workspace"><Hero setPage={setPage}/><div className="mobile-nav">{nav.map(item => <button key={item} onClick={() => setPage(item)} className={page === item ? 'selected' : ''}>{item}</button>)}</div>{page === 'Today' ? <Dashboard days={days} events={events} setPage={setPage}/> : page === 'Tasks' ? <TaskManager tasks={tasks} draft={draft} setDraft={setDraft} addTask={addTask} toggleTask={toggleTask}/> : page === 'Events' ? <EventManager events={events} refresh={load}/> : page === 'Guests & RSVPs' ? <GuestManager/> : <BudgetManager/>}</main></div>;
+  const [page, setPage] = useState("Today");
+  const [entryView, setEntryView] = useState<"public" | "login" | "planner">(
+    "public",
+  );
+  const [tasks, setTasks] = useState<UiTask[]>([]);
+  const [events, setEvents] = useState<ApiEvent[]>([]);
+  const [draft, setDraft] = useState("");
+  const [signedIn, setSignedIn] = useState(false);
+  const [error, setError] = useState("");
+  const days = useMemo(
+    () =>
+      Math.max(
+        0,
+        Math.ceil(
+          (new Date("2026-12-01T13:06:00").getTime() - Date.now()) / 86400000,
+        ),
+      ),
+    [],
+  );
+  const load = async () => {
+    const [remoteTasks, remoteEvents] = await Promise.all([
+      api.tasks(),
+      api.events(),
+    ]);
+    setTasks(remoteTasks.map(taskFromApi));
+    setEvents(remoteEvents);
+  };
+  useEffect(() => {
+    api
+      .me()
+      .then(() => setSignedIn(true))
+      .catch(() => undefined);
+  }, []);
+  const openPlanner = () => {
+    if (signedIn) {
+      setEntryView("planner");
+      setPage("Today");
+    } else setEntryView("login");
+  };
+  const addTask = async () => {
+    if (!draft.trim()) return;
+    try {
+      await api.addTask(draft.trim());
+      setDraft("");
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+  const toggleTask = async (task: UiTask) => {
+    try {
+      await api.updateTask(task.id, task.done ? "open" : "done");
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    }
+  };
+  if (entryView === "public" || page === "Public invite")
+    return <InvitePage onPlannerLogin={openPlanner} />;
+  if (entryView === "login" || !signedIn)
+    return (
+      <Login
+        onSignedIn={async () => {
+          setSignedIn(true);
+          await load();
+          setEntryView("planner");
+          setPage("Today");
+        }}
+        error={error}
+        setError={setError}
+      />
+    );
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="side-brand">
+          <span className="mini-rangoli">✦</span>
+          <span>SUMIT &amp; PUJA</span>
+        </div>
+        <nav>
+          {nav.map((item) => (
+            <button
+              key={item}
+              className={page === item ? "nav-item active" : "nav-item"}
+              onClick={() => setPage(item)}
+            >
+              {item === "Today" && <span className="nav-dot" />}
+              {item}
+            </button>
+          ))}
+        </nav>
+        <div className="side-footer">
+          <span>Wedding week</span>
+          <strong>28 Nov — 3 Dec</strong>
+        </div>
+      </aside>
+      <main className="workspace">
+        <Hero setPage={setPage} />
+        <div className="mobile-nav">
+          {nav.map((item) => (
+            <button
+              key={item}
+              onClick={() => setPage(item)}
+              className={page === item ? "selected" : ""}
+            >
+              {item}
+            </button>
+          ))}
+        </div>
+        {page === "Today" ? (
+          <Dashboard days={days} events={events} setPage={setPage} />
+        ) : page === "Tasks" ? (
+          <TaskManager
+            tasks={tasks}
+            draft={draft}
+            setDraft={setDraft}
+            addTask={addTask}
+            toggleTask={toggleTask}
+          />
+        ) : page === "Events" ? (
+          <EventManager events={events} refresh={load} />
+        ) : page === "Guests & RSVPs" ? (
+          <GuestManager />
+        ) : (
+          <BudgetManager />
+        )}
+      </main>
+    </div>
+  );
 }
 
-function Hero({ setPage }: { setPage: (page: string) => void }) { return <section className="hero"><div className="hero-copy"><p className="eyebrow">Our wedding planner</p><h1>Sumit <em>&amp;</em> Puja</h1><p className="hero-sub">Five beautiful days. One shared place to make every detail feel easy.</p><div className="hero-actions"><button className="ghost-button" onClick={() => setPage('Events')}><CalendarDays size={17}/> View celebrations</button><button className="ghost-button" onClick={() => setPage('Public invite')}>Public invite <ChevronRight size={16}/></button></div></div><div className="hero-art"><img src={couplePhoto} alt="Sumit and Puja in their wedding outfits"/></div></section>; }
-
-function Dashboard({ days, events, setPage }: { days: number; events: ApiEvent[]; setPage: (page: string) => void }) { return <><section className="overview"><div><p className="eyebrow ink">Today’s focus</p><h2>Little steps, beautifully held.</h2><p className="muted">Keep the important things moving, one shared update at a time.</p></div><div className="countdown"><span>Days to the wedding</span><strong>{days}</strong><small>1 December 2026</small></div></section><section className="section-head"><div><p className="eyebrow ink">The celebrations</p><h2>Save these dates</h2></div><button className="text-button" onClick={() => setPage('Events')}>Manage functions <ChevronRight size={16}/></button></section><div className="event-strip">{events.map(event => <article key={event.id} className="event-card"><div className="event-top"><span className="event-date"><b>{eventDate(event.date).split(' ')[0]}</b>{eventDate(event.date).split(' ')[1]}</span><span className="event-icon"><EventIcon kind={eventKind(event)} label={event.name}/></span></div><h3>{event.name}</h3><p>{event.time_note || event.venue || 'Details to follow'}</p></article>)}</div><section className="planning-grid home-links"><div className="home-task-card"><p className="eyebrow ink">Planning together</p><h2>Tasks live in their own space.</h2><p className="muted">Keep your shared checklist focused and easy to update.</p><button className="add-button" onClick={() => setPage('Tasks')}>Open tasks <ChevronRight size={16}/></button></div><aside className="right-rail"><div className="quick-card"><p className="eyebrow">Family pulse</p><h3>Everyone can pitch in.</h3><p>Share a task, a detail, or a decision. Every update is kept in one place.</p><button onClick={() => setPage('Public invite')}>Open public invite <ChevronRight size={16}/></button></div><div className="quick-links"><button aria-label="Open guests and RSVPs" onClick={() => setPage('Guests & RSVPs')}><UsersRound size={18}/><span><strong>Guests & RSVPs</strong><small>Build your family list</small></span><ChevronRight size={16}/></button><button aria-label="Open budget and vendors" onClick={() => setPage('Budget & vendors')}><CircleDollarSign size={18}/><span><strong>Budget & vendors</strong><small>Track every booking</small></span><ChevronRight size={16}/></button></div></aside></section></>; }
-
-function TaskManager({ tasks, draft, setDraft, addTask, toggleTask }: { tasks: UiTask[]; draft: string; setDraft: React.Dispatch<React.SetStateAction<string>>; addTask: () => void; toggleTask: (task: UiTask) => void }) { return <section className="task-manager"><p className="eyebrow ink">Shared checklist</p><h2>Tasks, clearly held.</h2><p>Every family member with organiser access can add and complete work here.</p><div className="task-panel"><div className="task-input"><input value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => e.key === 'Enter' && addTask()} placeholder="Add something to remember…"/><button onClick={addTask} aria-label="Add task"><Plus size={18}/></button></div><div className="task-list">{tasks.length ? tasks.map(task => <label className={task.done ? 'task done' : 'task'} key={task.id}><input type="checkbox" checked={task.done} onChange={() => toggleTask(task)}/><span className="check"/><span><strong>{task.text}</strong><small>{task.meta}</small></span></label>) : <p className="empty-state">Add the first task for the family.</p>}</div></div></section>; }
-
-function EventManager({ events, refresh }: { events: ApiEvent[]; refresh: () => Promise<void> }) {
-  const [editing, setEditing] = useState<ApiEvent|null>(null); const [name,setName]=useState(''); const [date,setDate]=useState(''); const [time,setTime]=useState(''); const [venue,setVenue]=useState(''); const [side,setSide]=useState<'bride'|'groom'|'both'>('both'); const [error,setError]=useState('');
-  const reset=()=>{setEditing(null);setName('');setDate('');setTime('');setVenue('');setSide('both');};
-  const save=async(e:React.FormEvent)=>{e.preventDefault();if(!name.trim()||!date){setError('Add a function name and date.');return;}try{if(editing) await api.updateEvent(editing.id,name.trim(),date,time.trim(),venue.trim(),side); else await api.addEvent(name.trim(),date,time.trim(),venue.trim(),side);reset();await refresh();}catch(err){setError((err as Error).message)}};
-  const edit=(event:ApiEvent)=>{setEditing(event);setName(event.name);setDate(event.date);setTime(event.time_note);setVenue(event.venue);setSide(event.side);setError('')};
-  const upload=async(event:ApiEvent,file?:File)=>{if(!file)return;try{await api.uploadEventAttachment(event.id,file);await refresh()}catch(err){setError((err as Error).message)}};
-  const removeAttachment=async(id:number)=>{if(!window.confirm('Remove this venue image?'))return;try{await api.deleteAttachment(id);await refresh()}catch(err){setError((err as Error).message)}};
-  const remove=async(event:ApiEvent)=>{if(!window.confirm(`Remove ${event.name}? Guests and tasks stay, but this function is removed from invitations.`))return;try{await api.deleteEvent(event.id);await refresh()}catch(err){setError((err as Error).message)}};
-  return <section className="event-manager"><p className="eyebrow ink">Functions &amp; venues</p><h2>Shape every celebration.</h2><p>Add, change, or remove functions. The public invite updates from this list automatically.</p><div className="event-manager-layout"><form className="budget-form" onSubmit={save}><h3>{editing?'Edit function':'Add a function'}</h3><label>Function name<input value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Sangeet night" required/></label><label>Date<input value={date} onChange={e=>setDate(e.target.value)} type="date" required/></label><label>Family side<select value={side} onChange={e=>setSide(e.target.value as 'bride'|'groom'|'both')}><option value="bride">Bride’s side</option><option value="groom">Groom’s side</option><option value="both">Both families</option></select></label><label>Time note <small>(optional)</small><input value={time} onChange={e=>setTime(e.target.value)} placeholder="e.g. 7 PM onwards"/></label><label>Venue <small>(optional)</small><input value={venue} onChange={e=>setVenue(e.target.value)} placeholder="e.g. Family courtyard"/></label><div className="guest-form-actions"><button className="add-button" type="submit">{editing?'Save function':'Add function'}</button>{editing&&<button className="cancel-edit" type="button" onClick={reset}>Cancel</button>}</div>{error&&<p className="form-error" role="alert">{error}</p>}</form><div className="vendor-list"><p className="eyebrow ink">Live functions</p>{events.map(event=><article key={event.id}><span><strong>{event.name}</strong><small>{eventDate(event.date)} · {event.side==='bride'?`Bride’s side`:event.side==='groom'?`Groom’s side`:`Both families`}{event.time_note?` · ${event.time_note}`:''}{event.venue?` · ${event.venue}`:''}</small><AttachmentGallery attachments={event.attachments} label="Venue images" onRemove={removeAttachment}/><label className="image-upload">Add venue photo<input type="file" accept="image/jpeg,image/png,image/webp" onChange={e=>upload(event,e.target.files?.[0])}/></label></span><span className="vendor-actions"><button onClick={()=>edit(event)} type="button" aria-label={`Edit ${event.name}`}><Pencil size={13}/></button><button onClick={()=>remove(event)} type="button" aria-label={`Remove ${event.name}`}><Trash2 size={13}/></button></span></article>)}</div></div></section>;
+function Hero({ setPage }: { setPage: (page: string) => void }) {
+  return (
+    <section className="hero">
+      <div className="hero-copy">
+        <p className="eyebrow">Our wedding planner</p>
+        <h1>
+          Sumit <em>&amp;</em> Puja
+        </h1>
+        <p className="hero-sub">
+          Five beautiful days. One shared place to make every detail feel easy.
+        </p>
+        <div className="hero-actions">
+          <button className="ghost-button" onClick={() => setPage("Events")}>
+            <CalendarDays size={17} /> View celebrations
+          </button>
+          <button
+            className="ghost-button"
+            onClick={() => setPage("Public invite")}
+          >
+            Public invite <ChevronRight size={16} />
+          </button>
+        </div>
+      </div>
+      <div className="hero-art">
+        <img src={couplePhoto} alt="Sumit and Puja in their wedding outfits" />
+      </div>
+    </section>
+  );
 }
 
-function AttachmentGallery({ attachments, label, onRemove }: { attachments: Attachment[]; label: string; onRemove: (id: number) => void }) {
+function Dashboard({
+  days,
+  events,
+  setPage,
+}: {
+  days: number;
+  events: ApiEvent[];
+  setPage: (page: string) => void;
+}) {
+  return (
+    <>
+      <section className="overview">
+        <div>
+          <p className="eyebrow ink">Today’s focus</p>
+          <h2>Little steps, beautifully held.</h2>
+          <p className="muted">
+            Keep the important things moving, one shared update at a time.
+          </p>
+        </div>
+        <div className="countdown">
+          <span>Days to the wedding</span>
+          <strong>{days}</strong>
+          <small>1 December 2026</small>
+        </div>
+      </section>
+      <section className="section-head">
+        <div>
+          <p className="eyebrow ink">The celebrations</p>
+          <h2>Save these dates</h2>
+        </div>
+        <button className="text-button" onClick={() => setPage("Events")}>
+          Manage functions <ChevronRight size={16} />
+        </button>
+      </section>
+      <div className="event-strip">
+        {events.map((event) => (
+          <article key={event.id} className="event-card">
+            <div className="event-top">
+              <span className="event-date">
+                <b>{eventDate(event.date).split(" ")[0]}</b>
+                {eventDate(event.date).split(" ")[1]}
+              </span>
+              <span className="event-icon">
+                <EventIcon kind={eventKind(event)} label={event.name} />
+              </span>
+            </div>
+            <h3>{event.name}</h3>
+            <p>{event.time_note || event.venue || "Details to follow"}</p>
+          </article>
+        ))}
+      </div>
+      <section className="planning-grid home-links">
+        <div className="home-task-card">
+          <p className="eyebrow ink">Planning together</p>
+          <h2>Tasks live in their own space.</h2>
+          <p className="muted">
+            Keep your shared checklist focused and easy to update.
+          </p>
+          <button className="add-button" onClick={() => setPage("Tasks")}>
+            Open tasks <ChevronRight size={16} />
+          </button>
+        </div>
+        <aside className="right-rail">
+          <div className="quick-card">
+            <p className="eyebrow">Family pulse</p>
+            <h3>Everyone can pitch in.</h3>
+            <p>
+              Share a task, a detail, or a decision. Every update is kept in one
+              place.
+            </p>
+            <button onClick={() => setPage("Public invite")}>
+              Open public invite <ChevronRight size={16} />
+            </button>
+          </div>
+          <div className="quick-links">
+            <button
+              aria-label="Open guests and RSVPs"
+              onClick={() => setPage("Guests & RSVPs")}
+            >
+              <UsersRound size={18} />
+              <span>
+                <strong>Guests & RSVPs</strong>
+                <small>Build your family list</small>
+              </span>
+              <ChevronRight size={16} />
+            </button>
+            <button
+              aria-label="Open budget and vendors"
+              onClick={() => setPage("Budget & vendors")}
+            >
+              <CircleDollarSign size={18} />
+              <span>
+                <strong>Budget & vendors</strong>
+                <small>Track every booking</small>
+              </span>
+              <ChevronRight size={16} />
+            </button>
+          </div>
+        </aside>
+      </section>
+    </>
+  );
+}
+
+function TaskManager({
+  tasks,
+  draft,
+  setDraft,
+  addTask,
+  toggleTask,
+}: {
+  tasks: UiTask[];
+  draft: string;
+  setDraft: React.Dispatch<React.SetStateAction<string>>;
+  addTask: () => void;
+  toggleTask: (task: UiTask) => void;
+}) {
+  return (
+    <section className="task-manager">
+      <p className="eyebrow ink">Shared checklist</p>
+      <h2>Tasks, clearly held.</h2>
+      <p>
+        Every family member with organiser access can add and complete work
+        here.
+      </p>
+      <div className="task-panel">
+        <div className="task-input">
+          <input
+            value={draft}
+            onChange={(e) => setDraft(e.target.value)}
+            onKeyDown={(e) => e.key === "Enter" && addTask()}
+            placeholder="Add something to remember…"
+          />
+          <button onClick={addTask} aria-label="Add task">
+            <Plus size={18} />
+          </button>
+        </div>
+        <div className="task-list">
+          {tasks.length ? (
+            tasks.map((task) => (
+              <label className={task.done ? "task done" : "task"} key={task.id}>
+                <input
+                  type="checkbox"
+                  checked={task.done}
+                  onChange={() => toggleTask(task)}
+                />
+                <span className="check" />
+                <span>
+                  <strong>{task.text}</strong>
+                  <small>{task.meta}</small>
+                </span>
+              </label>
+            ))
+          ) : (
+            <p className="empty-state">Add the first task for the family.</p>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function EventManager({
+  events,
+  refresh,
+}: {
+  events: ApiEvent[];
+  refresh: () => Promise<void>;
+}) {
+  const [editing, setEditing] = useState<ApiEvent | null>(null);
+  const [name, setName] = useState("");
+  const [date, setDate] = useState("");
+  const [time, setTime] = useState("");
+  const [venue, setVenue] = useState("");
+  const [side, setSide] = useState<"bride" | "groom" | "both">("both");
+  const [error, setError] = useState("");
+  const reset = () => {
+    setEditing(null);
+    setName("");
+    setDate("");
+    setTime("");
+    setVenue("");
+    setSide("both");
+  };
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || !date) {
+      setError("Add a function name and date.");
+      return;
+    }
+    try {
+      if (editing)
+        await api.updateEvent(
+          editing.id,
+          name.trim(),
+          date,
+          time.trim(),
+          venue.trim(),
+          side,
+        );
+      else
+        await api.addEvent(name.trim(), date, time.trim(), venue.trim(), side);
+      reset();
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+  const edit = (event: ApiEvent) => {
+    setEditing(event);
+    setName(event.name);
+    setDate(event.date);
+    setTime(event.time_note);
+    setVenue(event.venue);
+    setSide(event.side);
+    setError("");
+  };
+  const upload = async (event: ApiEvent, file?: File) => {
+    if (!file) return;
+    try {
+      await api.uploadEventAttachment(event.id, file);
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+  const removeAttachment = async (id: number) => {
+    if (!window.confirm("Remove this venue image?")) return;
+    try {
+      await api.deleteAttachment(id);
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+  const remove = async (event: ApiEvent) => {
+    if (
+      !window.confirm(
+        `Remove ${event.name}? Guests and tasks stay, but this function is removed from invitations.`,
+      )
+    )
+      return;
+    try {
+      await api.deleteEvent(event.id);
+      await refresh();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+  return (
+    <section className="event-manager">
+      <p className="eyebrow ink">Functions &amp; venues</p>
+      <h2>Shape every celebration.</h2>
+      <p>
+        Add, change, or remove functions. The public invite updates from this
+        list automatically.
+      </p>
+      <div className="event-manager-layout">
+        <form className="budget-form" onSubmit={save}>
+          <h3>{editing ? "Edit function" : "Add a function"}</h3>
+          <label>
+            Function name
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              placeholder="e.g. Sangeet night"
+              required
+            />
+          </label>
+          <label>
+            Date
+            <input
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              type="date"
+              required
+            />
+          </label>
+          <label>
+            Family side
+            <select
+              value={side}
+              onChange={(e) =>
+                setSide(e.target.value as "bride" | "groom" | "both")
+              }
+            >
+              <option value="bride">Bride’s side</option>
+              <option value="groom">Groom’s side</option>
+              <option value="both">Both families</option>
+            </select>
+          </label>
+          <label>
+            Time note <small>(optional)</small>
+            <input
+              value={time}
+              onChange={(e) => setTime(e.target.value)}
+              placeholder="e.g. 7 PM onwards"
+            />
+          </label>
+          <label>
+            Venue <small>(optional)</small>
+            <input
+              value={venue}
+              onChange={(e) => setVenue(e.target.value)}
+              placeholder="e.g. Family courtyard"
+            />
+          </label>
+          <div className="guest-form-actions">
+            <button className="add-button" type="submit">
+              {editing ? "Save function" : "Add function"}
+            </button>
+            {editing && (
+              <button className="cancel-edit" type="button" onClick={reset}>
+                Cancel
+              </button>
+            )}
+          </div>
+          {error && (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          )}
+        </form>
+        <div className="vendor-list">
+          <p className="eyebrow ink">Live functions</p>
+          {events.map((event) => (
+            <article key={event.id}>
+              <span>
+                <strong>{event.name}</strong>
+                <small>
+                  {eventDate(event.date)} ·{" "}
+                  {event.side === "bride"
+                    ? `Bride’s side`
+                    : event.side === "groom"
+                      ? `Groom’s side`
+                      : `Both families`}
+                  {event.time_note ? ` · ${event.time_note}` : ""}
+                  {event.venue ? ` · ${event.venue}` : ""}
+                </small>
+                <AttachmentGallery
+                  attachments={event.attachments}
+                  label="Venue images"
+                  onRemove={removeAttachment}
+                />
+                <label className="image-upload">
+                  Add venue photo
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(e) => upload(event, e.target.files?.[0])}
+                  />
+                </label>
+              </span>
+              <span className="vendor-actions">
+                <button
+                  onClick={() => edit(event)}
+                  type="button"
+                  aria-label={`Edit ${event.name}`}
+                >
+                  <Pencil size={13} />
+                </button>
+                <button
+                  onClick={() => remove(event)}
+                  type="button"
+                  aria-label={`Remove ${event.name}`}
+                >
+                  <Trash2 size={13} />
+                </button>
+              </span>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function AttachmentGallery({
+  attachments,
+  label,
+  onRemove,
+}: {
+  attachments: Attachment[];
+  label: string;
+  onRemove: (id: number) => void;
+}) {
   if (!attachments.length) return null;
-  return <div className="attachment-gallery" aria-label={label}>{attachments.map(attachment => <figure key={attachment.id}><img src={api.attachmentUrl(attachment.url)} alt={attachment.filename}/><button type="button" onClick={() => onRemove(attachment.id)} aria-label={`Remove ${attachment.filename}`} title="Remove image"><Trash2 size={12}/></button></figure>)}</div>;
+  return (
+    <div className="attachment-gallery" aria-label={label}>
+      {attachments.map((attachment) => (
+        <figure key={attachment.id}>
+          <img
+            src={api.attachmentUrl(attachment.url)}
+            alt={attachment.filename}
+          />
+          <button
+            type="button"
+            onClick={() => onRemove(attachment.id)}
+            aria-label={`Remove ${attachment.filename}`}
+            title="Remove image"
+          >
+            <Trash2 size={12} />
+          </button>
+        </figure>
+      ))}
+    </div>
+  );
 }
 
-function GuestManager() { const [guests,setGuests]=useState<ApiGuest[]>([]);const [summary,setSummary]=useState<GuestSummary|null>(null);const [eventList,setEventList]=useState<ApiEvent[]>([]);const [name,setName]=useState('');const [side,setSide]=useState<'bride'|'groom'>('bride');const [allEvents,setAllEvents]=useState(true);const [selected,setSelected]=useState<number[]>([]);const [editing,setEditing]=useState<ApiGuest|null>(null);const [error,setError]=useState('');const formRef=useRef<HTMLFormElement>(null);const inputRef=useRef<HTMLInputElement>(null);const load=async()=>{const[g,s,e]=await Promise.all([api.guests(),api.summary(),api.events()]);setGuests(g);setSummary(s);setEventList(e)};useEffect(()=>{load().catch(e=>setError((e as Error).message))},[]);const reset=()=>{setName('');setSide('bride');setAllEvents(true);setSelected([]);setEditing(null)};const edit=(g:ApiGuest)=>{setEditing(g);setName(g.name);setSide(g.side);setAllEvents(g.all_events);setSelected(g.event_ids);formRef.current?.scrollIntoView({behavior:'smooth',block:'start'});inputRef.current?.focus()};const save=async(e:React.FormEvent)=>{e.preventDefault();if(!name.trim()||(!allEvents&&!selected.length))return;try{if(editing)await api.updateGuest(editing.id,name.trim(),side,allEvents,selected);else{const g=await api.addGuest(name.trim(),side);await api.inviteGuest(g.id,allEvents,selected)}reset();await load()}catch(err){setError((err as Error).message)}};return <section className="guest-manager"><div className="guest-heading"><p className="eyebrow ink">Guests &amp; invitations</p><h2>Everyone has a place at the celebration.</h2><p>Add family from either side, then choose the functions they are invited to.</p></div><div className="guest-totals"><article><small>Total invited</small><strong>{summary?.total??'—'}</strong></article><article><small>Bride’s side</small><strong>{summary?.bride_total??'—'}</strong></article><article><small>Groom’s side</small><strong>{summary?.groom_total??'—'}</strong></article></div><div className="guest-layout"><form ref={formRef} className="guest-form" onSubmit={save}><h3>{editing?'Edit guest or family':'Add a guest or family'}</h3><label>Guest or family name<input ref={inputRef} value={name} onChange={e=>setName(e.target.value)} required/></label><fieldset><legend>Family side</legend><label className="side-choice"><input type="radio" checked={side==='bride'} onChange={()=>setSide('bride')}/> Bride’s side</label><label className="side-choice"><input type="radio" checked={side==='groom'} onChange={()=>setSide('groom')}/> Groom’s side</label></fieldset><fieldset><legend>Invite them to</legend><label className="side-choice"><input type="checkbox" checked={allEvents} onChange={e=>setAllEvents(e.target.checked)}/> All functions</label>{!allEvents&&<div className="event-checks">{eventList.map(event=><label key={event.id}><input type="checkbox" checked={selected.includes(event.id)} onChange={()=>setSelected(ids=>ids.includes(event.id)?ids.filter(id=>id!==event.id):[...ids,event.id])}/> {event.name}</label>)}</div>}</fieldset><div className="guest-form-actions"><button className="add-button" type="submit">{editing?'Save guest changes':'Add to guest list'}</button>{editing&&<button type="button" className="cancel-edit" onClick={reset}>Cancel</button>}</div>{error&&<p className="form-error">{error}</p>}</form><div className="guest-details"><p className="eyebrow ink">Function totals</p><div className="function-totals">{summary?.events.map(event=><article key={event.id}><span>{event.name}</span><strong>{event.guest_count}</strong><small>{eventDate(event.date)}</small></article>)}</div><div className="guest-list"><p className="eyebrow ink">Your list</p>{guests.map(g=><div key={g.id}><span><strong>{g.name}</strong><small>{g.side==='bride'?`Bride’s side`:`Groom’s side`}</small></span><span className="guest-row-actions"><b>{g.side==='bride'?'Bride':'Groom'}</b><button type="button" onClick={()=>edit(g)} aria-label={`Edit ${g.name}`}><Pencil size={13}/></button></span></div>)}</div></div></div></section>; }
+function GuestManager() {
+  const guestsPerPage = 20;
+  const [guests, setGuests] = useState<ApiGuest[]>([]);
+  const [summary, setSummary] = useState<GuestSummary | null>(null);
+  const [eventList, setEventList] = useState<ApiEvent[]>([]);
+  const [name, setName] = useState("");
+  const [side, setSide] = useState<"bride" | "groom">("bride");
+  const [allEvents, setAllEvents] = useState(true);
+  const [selected, setSelected] = useState<number[]>([]);
+  const [editing, setEditing] = useState<ApiGuest | null>(null);
+  const [error, setError] = useState("");
+  const [search, setSearch] = useState("");
+  const [page, setPage] = useState(1);
+  const formRef = useRef<HTMLFormElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const load = async () => {
+    const [g, s, e] = await Promise.all([
+      api.guests(),
+      api.summary(),
+      api.events(),
+    ]);
+    setGuests(g);
+    setSummary(s);
+    setEventList(e);
+  };
+  useEffect(() => {
+    load().catch((e) => setError((e as Error).message));
+  }, []);
+  const filteredGuests = useMemo(
+    () =>
+      guests.filter((guest) =>
+        guest.name.toLocaleLowerCase().includes(search.trim().toLocaleLowerCase()),
+      ),
+    [guests, search],
+  );
+  const pageCount = Math.max(1, Math.ceil(filteredGuests.length / guestsPerPage));
+  const visibleGuests = filteredGuests.slice(
+    (page - 1) * guestsPerPage,
+    page * guestsPerPage,
+  );
+  const reset = () => {
+    setName("");
+    setSide("bride");
+    setAllEvents(true);
+    setSelected([]);
+    setEditing(null);
+  };
+  const edit = (g: ApiGuest) => {
+    setEditing(g);
+    setName(g.name);
+    setSide(g.side);
+    setAllEvents(g.all_events);
+    setSelected(g.event_ids);
+    formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    inputRef.current?.focus();
+  };
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!name.trim() || (!allEvents && !selected.length)) return;
+    try {
+      if (editing)
+        await api.updateGuest(
+          editing.id,
+          name.trim(),
+          side,
+          allEvents,
+          selected,
+        );
+      else {
+        const g = await api.addGuest(name.trim(), side);
+        await api.inviteGuest(g.id, allEvents, selected);
+      }
+      reset();
+      setPage(1);
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+  return (
+    <section className="guest-manager">
+      <div className="guest-heading">
+        <p className="eyebrow ink">Guests &amp; invitations</p>
+        <h2>Everyone has a place at the celebration.</h2>
+        <p>
+          Add family from either side, then choose the functions they are
+          invited to.
+        </p>
+      </div>
+      <div className="guest-totals">
+        <article>
+          <small>Total invited</small>
+          <strong>{summary?.total ?? "—"}</strong>
+        </article>
+        <article>
+          <small>Bride’s side</small>
+          <strong>{summary?.bride_total ?? "—"}</strong>
+        </article>
+        <article>
+          <small>Groom’s side</small>
+          <strong>{summary?.groom_total ?? "—"}</strong>
+        </article>
+      </div>
+      <div className="guest-layout">
+        <form ref={formRef} className="guest-form" onSubmit={save}>
+          <h3>{editing ? "Edit guest or family" : "Add a guest or family"}</h3>
+          <label>
+            Guest or family name
+            <input
+              ref={inputRef}
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+            />
+          </label>
+          <fieldset>
+            <legend>Family side</legend>
+            <label className="side-choice">
+              <input
+                type="radio"
+                checked={side === "bride"}
+                onChange={() => setSide("bride")}
+              />{" "}
+              Bride’s side
+            </label>
+            <label className="side-choice">
+              <input
+                type="radio"
+                checked={side === "groom"}
+                onChange={() => setSide("groom")}
+              />{" "}
+              Groom’s side
+            </label>
+          </fieldset>
+          <fieldset>
+            <legend>Invite them to</legend>
+            <label className="side-choice">
+              <input
+                type="checkbox"
+                checked={allEvents}
+                onChange={(e) => setAllEvents(e.target.checked)}
+              />{" "}
+              All functions
+            </label>
+            {!allEvents && (
+              <div className="event-checks">
+                {eventList.map((event) => (
+                  <label key={event.id}>
+                    <input
+                      type="checkbox"
+                      checked={selected.includes(event.id)}
+                      onChange={() =>
+                        setSelected((ids) =>
+                          ids.includes(event.id)
+                            ? ids.filter((id) => id !== event.id)
+                            : [...ids, event.id],
+                        )
+                      }
+                    />{" "}
+                    {event.name}
+                  </label>
+                ))}
+              </div>
+            )}
+          </fieldset>
+          <div className="guest-form-actions">
+            <button className="add-button" type="submit">
+              {editing ? "Save guest changes" : "Add to guest list"}
+            </button>
+            {editing && (
+              <button type="button" className="cancel-edit" onClick={reset}>
+                Cancel
+              </button>
+            )}
+          </div>
+          {error && <p className="form-error">{error}</p>}
+        </form>
+        <div className="guest-details">
+          <p className="eyebrow ink">Function totals</p>
+          <div className="function-totals">
+            {summary?.events.map((event) => (
+              <article key={event.id}>
+                <span>{event.name}</span>
+                <strong>{event.guest_count}</strong>
+                <small>{eventDate(event.date)}</small>
+              </article>
+            ))}
+          </div>
+          <div className="guest-list">
+            <div className="guest-list-heading">
+              <p className="eyebrow ink">Your list</p>
+              <label className="guest-search">
+                <span className="sr-only">Search guests</span>
+                <input
+                  type="search"
+                  aria-label="Search guests"
+                  value={search}
+                  onChange={(e) => {
+                    setSearch(e.target.value);
+                    setPage(1);
+                  }}
+                  placeholder="Search by name"
+                />
+              </label>
+            </div>
+            <p className="guest-list-count">
+              {filteredGuests.length} {filteredGuests.length === 1 ? "entry" : "entries"}
+            </p>
+            {visibleGuests.map((g) => (
+              <div key={g.id}>
+                <span>
+                  <strong>{g.name}</strong>
+                  <small>
+                    {g.side === "bride" ? `Bride’s side` : `Groom’s side`}
+                  </small>
+                </span>
+                <span className="guest-row-actions">
+                  <b>{g.side === "bride" ? "Bride" : "Groom"}</b>
+                  <button
+                    type="button"
+                    onClick={() => edit(g)}
+                    aria-label={`Edit ${g.name}`}
+                  >
+                    <Pencil size={13} />
+                  </button>
+                </span>
+              </div>
+            ))}
+            {!visibleGuests.length && <p className="empty-state">No guests match that search.</p>}
+            {pageCount > 1 && (
+              <nav className="guest-pagination" aria-label="Guest list pages">
+                <button type="button" onClick={() => setPage((current) => current - 1)} disabled={page === 1}>
+                  Previous
+                </button>
+                <span>Page {page} of {pageCount}</span>
+                <button type="button" onClick={() => setPage((current) => current + 1)} disabled={page === pageCount}>
+                  Next page
+                </button>
+              </nav>
+            )}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+}
 
 function BudgetManager() {
-  const [vendors,setVendors]=useState<ApiVendor[]>([]); const [summary,setSummary]=useState<BudgetSummary|null>(null); const [name,setName]=useState(''); const [category,setCategory]=useState(''); const [phone,setPhone]=useState(''); const [receiptFile,setReceiptFile]=useState<File|null>(null); const [side,setSide]=useState<'bride'|'groom'|'both'>('both'); const [amount,setAmount]=useState(''); const [paid,setPaid]=useState(''); const [editing,setEditing]=useState<ApiVendor|null>(null); const [error,setError]=useState('');
-  const load=async()=>{const[v,s]=await Promise.all([api.vendors(),api.budgetSummary()]);setVendors(v);setSummary(s)};
-  useEffect(()=>{load().catch(e=>setError((e as Error).message))},[]);
-  const reset=()=>{setName('');setCategory('');setPhone('');setReceiptFile(null);setSide('both');setAmount('');setPaid('');setEditing(null)};
-  const edit=(v:ApiVendor)=>{setEditing(v);setName(v.name);setCategory(v.category);setPhone(v.phone);setReceiptFile(null);setSide(v.side);setAmount(String(v.amount));setPaid(String(v.paid_amount));setError('')};
-  const save=async(e:React.FormEvent)=>{e.preventDefault();const total=Number(amount), paidAmount=Number(paid||0);if(!name.trim()||!category.trim()||total<0||paidAmount<0||paidAmount>total){setError('Enter a valid vendor, category, total, and paid amount.');return}try{const vendor=editing?await api.updateVendor(editing.id,name,category,phone.trim(),side,total,paidAmount):await api.addVendor(name,category,phone.trim(),side,total,paidAmount);if(receiptFile){try{await api.uploadVendorAttachment(vendor.id,receiptFile)}catch{reset();await load();setError('Vendor was saved, but the receipt did not upload. Use Upload another receipt below to try again.');return}}reset();await load()}catch(err){setError((err as Error).message)}};
-  const upload=async(vendor:ApiVendor,file?:File)=>{if(!file)return;try{await api.uploadVendorAttachment(vendor.id,file);await load()}catch(err){setError((err as Error).message)}};
-  const removeAttachment=async(id:number)=>{if(!window.confirm('Remove this receipt image?'))return;try{await api.deleteAttachment(id);await load()}catch(err){setError((err as Error).message)}};
-  return <section className="budget-manager"><div className="guest-heading"><p className="eyebrow ink">Budget &amp; vendors</p><h2>Budget, clearly held.</h2><p>Track every booking, its family side, receipts, and what is still due.</p></div><div className="budget-totals"><article><small>Planned</small><strong>{summary?money(summary.planned_total):'—'}</strong></article><article><small>Paid</small><strong>{summary?money(summary.paid_total):'—'}</strong></article><article><small>Still due</small><strong>{summary?money(summary.due_total):'—'}</strong></article></div><div className="budget-layout"><form className="budget-form" onSubmit={save}><h3>{editing?'Edit vendor':'Add a vendor'}</h3><label>Vendor name<input value={name} onChange={e=>setName(e.target.value)} required/></label><label>Category<input value={category} onChange={e=>setCategory(e.target.value)} required/></label><label>Contact number <small>(optional)</small><input value={phone} onChange={e=>setPhone(e.target.value)} type="tel" inputMode="tel" placeholder="e.g. +91 98765 43210"/></label><label>Receipt image <small>(optional)</small><input type="file" accept="image/jpeg,image/png,image/webp" onChange={e=>setReceiptFile(e.target.files?.[0]??null)}/></label><label>Family side<select value={side} onChange={e=>setSide(e.target.value as 'bride'|'groom'|'both')}><option value="bride">Bride’s side</option><option value="groom">Groom’s side</option><option value="both">Both families</option></select></label><label>Total cost (₹)<input value={amount} onChange={e=>setAmount(e.target.value)} type="number" min="0" required/></label><label>Paid so far (₹)<input value={paid} onChange={e=>setPaid(e.target.value)} type="number" min="0" required/></label><div className="guest-form-actions"><button className="add-button" type="submit">{editing?'Save vendor':'Add vendor'}</button>{editing&&<button className="cancel-edit" type="button" onClick={reset}>Cancel</button>}</div>{error&&<p className="form-error" role="alert">{error}</p>}</form><div className="vendor-list"><p className="eyebrow ink">Your bookings</p>{vendors.map(v=><article key={v.id}><span><strong>{v.name}</strong><small>{v.category} · {money(v.paid_amount)} paid of {money(v.amount)}</small>{v.phone&&<a className="vendor-phone" href={`tel:${v.phone.replace(/[^+\\d]/g,'')}`}>{v.phone}</a>}<AttachmentGallery attachments={v.attachments} label="Receipt images" onRemove={removeAttachment}/><label className="image-upload">Upload another receipt<input type="file" accept="image/jpeg,image/png,image/webp" onChange={e=>upload(v,e.target.files?.[0])}/></label></span><span className="vendor-actions"><b>{v.side==='bride'?`Bride’s side`:v.side==='groom'?`Groom’s side`:`Both`}</b><button onClick={()=>edit(v)} type="button" aria-label={`Edit ${v.name}`}><Pencil size={13}/></button></span></article>)}</div></div></section>;
+  const [vendors, setVendors] = useState<ApiVendor[]>([]);
+  const [summary, setSummary] = useState<BudgetSummary | null>(null);
+  const [name, setName] = useState("");
+  const [category, setCategory] = useState("");
+  const [phone, setPhone] = useState("");
+  const [receiptFile, setReceiptFile] = useState<File | null>(null);
+  const [side, setSide] = useState<"bride" | "groom" | "both">("both");
+  const [amount, setAmount] = useState("");
+  const [paid, setPaid] = useState("");
+  const [editing, setEditing] = useState<ApiVendor | null>(null);
+  const [error, setError] = useState("");
+  const load = async () => {
+    const [v, s] = await Promise.all([api.vendors(), api.budgetSummary()]);
+    setVendors(v);
+    setSummary(s);
+  };
+  useEffect(() => {
+    load().catch((e) => setError((e as Error).message));
+  }, []);
+  const reset = () => {
+    setName("");
+    setCategory("");
+    setPhone("");
+    setReceiptFile(null);
+    setSide("both");
+    setAmount("");
+    setPaid("");
+    setEditing(null);
+  };
+  const edit = (v: ApiVendor) => {
+    setEditing(v);
+    setName(v.name);
+    setCategory(v.category);
+    setPhone(v.phone);
+    setReceiptFile(null);
+    setSide(v.side);
+    setAmount(String(v.amount));
+    setPaid(String(v.paid_amount));
+    setError("");
+  };
+  const save = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const total = Number(amount),
+      paidAmount = Number(paid || 0);
+    if (
+      !name.trim() ||
+      !category.trim() ||
+      total < 0 ||
+      paidAmount < 0 ||
+      paidAmount > total
+    ) {
+      setError("Enter a valid vendor, category, total, and paid amount.");
+      return;
+    }
+    try {
+      const vendor = editing
+        ? await api.updateVendor(
+            editing.id,
+            name,
+            category,
+            phone.trim(),
+            side,
+            total,
+            paidAmount,
+          )
+        : await api.addVendor(
+            name,
+            category,
+            phone.trim(),
+            side,
+            total,
+            paidAmount,
+          );
+      if (receiptFile) {
+        try {
+          await api.uploadVendorAttachment(vendor.id, receiptFile);
+        } catch {
+          reset();
+          await load();
+          setError(
+            "Vendor was saved, but the receipt did not upload. Use Upload another receipt below to try again.",
+          );
+          return;
+        }
+      }
+      reset();
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+  const upload = async (vendor: ApiVendor, file?: File) => {
+    if (!file) return;
+    try {
+      await api.uploadVendorAttachment(vendor.id, file);
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+  const removeAttachment = async (id: number) => {
+    if (!window.confirm("Remove this receipt image?")) return;
+    try {
+      await api.deleteAttachment(id);
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
+  return (
+    <section className="budget-manager">
+      <div className="guest-heading">
+        <p className="eyebrow ink">Budget &amp; vendors</p>
+        <h2>Budget, clearly held.</h2>
+        <p>
+          Track every booking, its family side, receipts, and what is still due.
+        </p>
+      </div>
+      <div className="budget-totals">
+        <article>
+          <small>Planned</small>
+          <strong>{summary ? money(summary.planned_total) : "—"}</strong>
+        </article>
+        <article>
+          <small>Paid</small>
+          <strong>{summary ? money(summary.paid_total) : "—"}</strong>
+        </article>
+        <article>
+          <small>Still due</small>
+          <strong>{summary ? money(summary.due_total) : "—"}</strong>
+        </article>
+      </div>
+      <div className="budget-layout">
+        <form className="budget-form" onSubmit={save}>
+          <h3>{editing ? "Edit vendor" : "Add a vendor"}</h3>
+          <label>
+            Vendor name
+            <input
+              value={name}
+              onChange={(e) => setName(e.target.value)}
+              required
+            />
+          </label>
+          <label>
+            Category
+            <input
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              required
+            />
+          </label>
+          <label>
+            Contact number <small>(optional)</small>
+            <input
+              value={phone}
+              onChange={(e) => setPhone(e.target.value)}
+              type="tel"
+              inputMode="tel"
+              placeholder="e.g. +91 98765 43210"
+            />
+          </label>
+          <label>
+            Receipt image <small>(optional)</small>
+            <input
+              type="file"
+              accept="image/jpeg,image/png,image/webp"
+              onChange={(e) => setReceiptFile(e.target.files?.[0] ?? null)}
+            />
+          </label>
+          <label>
+            Family side
+            <select
+              value={side}
+              onChange={(e) =>
+                setSide(e.target.value as "bride" | "groom" | "both")
+              }
+            >
+              <option value="bride">Bride’s side</option>
+              <option value="groom">Groom’s side</option>
+              <option value="both">Both families</option>
+            </select>
+          </label>
+          <label>
+            Total cost (₹)
+            <input
+              value={amount}
+              onChange={(e) => setAmount(e.target.value)}
+              type="number"
+              min="0"
+              required
+            />
+          </label>
+          <label>
+            Paid so far (₹)
+            <input
+              value={paid}
+              onChange={(e) => setPaid(e.target.value)}
+              type="number"
+              min="0"
+              required
+            />
+          </label>
+          <div className="guest-form-actions">
+            <button className="add-button" type="submit">
+              {editing ? "Save vendor" : "Add vendor"}
+            </button>
+            {editing && (
+              <button className="cancel-edit" type="button" onClick={reset}>
+                Cancel
+              </button>
+            )}
+          </div>
+          {error && (
+            <p className="form-error" role="alert">
+              {error}
+            </p>
+          )}
+        </form>
+        <div className="vendor-list">
+          <p className="eyebrow ink">Your bookings</p>
+          {vendors.map((v) => (
+            <article key={v.id}>
+              <span>
+                <strong>{v.name}</strong>
+                <small>
+                  {v.category} · {money(v.paid_amount)} paid of{" "}
+                  {money(v.amount)}
+                </small>
+                {v.phone && (
+                  <a
+                    className="vendor-phone"
+                    href={`tel:${v.phone.replace(/[^+\\d]/g, "")}`}
+                  >
+                    {v.phone}
+                  </a>
+                )}
+                <AttachmentGallery
+                  attachments={v.attachments}
+                  label="Receipt images"
+                  onRemove={removeAttachment}
+                />
+                <label className="image-upload">
+                  Upload another receipt
+                  <input
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    onChange={(e) => upload(v, e.target.files?.[0])}
+                  />
+                </label>
+              </span>
+              <span className="vendor-actions">
+                <b>
+                  {v.side === "bride"
+                    ? `Bride’s side`
+                    : v.side === "groom"
+                      ? `Groom’s side`
+                      : `Both`}
+                </b>
+                <button
+                  onClick={() => edit(v)}
+                  type="button"
+                  aria-label={`Edit ${v.name}`}
+                >
+                  <Pencil size={13} />
+                </button>
+              </span>
+            </article>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
 }
 
-function InvitePage({ onPlannerLogin }: { onPlannerLogin: () => void }) { const [events,setEvents]=useState<ApiEvent[]>([]);useEffect(()=>{api.publicEvents().then(setEvents).catch(()=>setEvents([]))},[]);return <div className="public-invite"><header><span>SUMIT &amp; PUJA</span><button onClick={onPlannerLogin}>Planner login</button></header><section className="public-invite-hero"><div className="public-invite-copy"><p className="eyebrow">With the blessings of our families</p><h1>Sumit <em>&amp;</em> Puja</h1><p>Invite you to celebrate a new beginning.</p><span className="venue-status"><MapPin size={17}/> Venue details to follow</span></div><img src={couplePhoto} alt="Sumit and Puja in their wedding outfits"/></section><section className="invite-events"><p className="eyebrow ink">The celebrations</p><h2>Come celebrate with us</h2><div>{events.length?events.map(event=><article key={event.id}><span className="event-icon"><EventIcon kind={eventKind(event)} label={event.name}/></span><span><strong>{event.name}</strong><small>{eventDate(event.date)}{event.time_note?` · ${event.time_note}`:''}{event.venue?` · ${event.venue}`:''}</small></span></article>):<p className="empty-state">Celebration details will be shared soon.</p>}</div><p className="invite-note">Questions? Please message the family directly.</p></section></div>; }
+function InvitePage({ onPlannerLogin }: { onPlannerLogin: () => void }) {
+  const [events, setEvents] = useState<ApiEvent[]>([]);
+  useEffect(() => {
+    api
+      .publicEvents()
+      .then(setEvents)
+      .catch(() => setEvents([]));
+  }, []);
+  return (
+    <div className="public-invite">
+      <header>
+        <span>SUMIT &amp; PUJA</span>
+        <button onClick={onPlannerLogin}>Planner login</button>
+      </header>
+      <section className="public-invite-hero">
+        <div className="public-invite-copy">
+          <p className="eyebrow">With the blessings of our families</p>
+          <h1>
+            Sumit <em>&amp;</em> Puja
+          </h1>
+          <p>Invite you to celebrate a new beginning.</p>
+          <span className="venue-status">
+            <MapPin size={17} /> Venue details to follow
+          </span>
+        </div>
+        <img src={couplePhoto} alt="Sumit and Puja in their wedding outfits" />
+      </section>
+      <section className="invite-events">
+        <p className="eyebrow ink">The celebrations</p>
+        <h2>Come celebrate with us</h2>
+        <div>
+          {events.length ? (
+            events.map((event) => (
+              <article key={event.id}>
+                <span className="event-icon">
+                  <EventIcon kind={eventKind(event)} label={event.name} />
+                </span>
+                <span>
+                  <strong>{event.name}</strong>
+                  <small>
+                    {eventDate(event.date)}
+                    {event.time_note ? ` · ${event.time_note}` : ""}
+                    {event.venue ? ` · ${event.venue}` : ""}
+                  </small>
+                </span>
+              </article>
+            ))
+          ) : (
+            <p className="empty-state">
+              Celebration details will be shared soon.
+            </p>
+          )}
+        </div>
+        <p className="invite-note">
+          Questions? Please message the family directly.
+        </p>
+      </section>
+    </div>
+  );
+}

@@ -77,12 +77,39 @@ it('brings the guest edit form into view after tapping a guest pencil', async ()
   vi.spyOn(api, 'guests').mockResolvedValue([{ id: 9, name: 'Test family', side: 'bride', phone: null, note: '', all_events: true, event_ids: [1, 2, 3, 5] }]);
   vi.spyOn(api, 'summary').mockResolvedValue({ total: 1, bride_total: 1, groom_total: 0, events: [] });
   vi.spyOn(api, 'events').mockResolvedValue([]);
+  const updateGuest = vi.spyOn(api, 'updateGuest').mockResolvedValue({ id: 9, name: 'Updated family', side: 'groom', phone: null, note: '', all_events: true, event_ids: [1, 2, 3, 5] });
   render(<App />);
   await user.click(screen.getByRole('button', { name: /planner login/i }));
   await user.click(await screen.findByRole('button', { name: 'Open guests and RSVPs' }));
   await user.click(await screen.findByRole('button', { name: 'Edit Test family' }));
   expect(screen.getByRole('heading', { name: 'Edit guest or family' })).toBeVisible();
   expect(scrollIntoView).toHaveBeenCalled();
+  await user.clear(screen.getByLabelText('Guest or family name'));
+  await user.type(screen.getByLabelText('Guest or family name'), 'Updated family');
+  await user.click(screen.getByRole('radio', { name: 'Groom’s side' }));
+  await user.click(screen.getByRole('button', { name: 'Save guest changes' }));
+  expect(updateGuest).toHaveBeenCalledWith(9, 'Updated family', 'groom', true, [1, 2, 3, 5]);
+});
+
+it('searches guests and keeps the list in manageable pages', async () => {
+  const user = userEvent.setup();
+  const guests = Array.from({ length: 25 }, (_, index) => ({ id: index + 1, name: index === 24 ? 'Puja Sharma family' : `Guest family ${index + 1}`, side: 'bride' as const, phone: null, note: '', all_events: true, event_ids: [1] }));
+  vi.spyOn(api, 'me').mockResolvedValue({ username: 'sumit-puja' });
+  vi.spyOn(api, 'login').mockResolvedValue({ username: 'sumit-puja' });
+  vi.spyOn(api, 'tasks').mockResolvedValue([]);
+  vi.spyOn(api, 'guests').mockResolvedValue(guests);
+  vi.spyOn(api, 'summary').mockResolvedValue({ total: 25, bride_total: 25, groom_total: 0, events: [] });
+  vi.spyOn(api, 'events').mockResolvedValue([]);
+  render(<App />);
+  await user.click(screen.getByRole('button', { name: /planner login/i }));
+  await user.click(await screen.findByRole('button', { name: 'Open guests and RSVPs' }));
+  expect(screen.getByText('Guest family 1')).toBeVisible();
+  expect(screen.queryByText('Puja Sharma family')).not.toBeInTheDocument();
+  await user.click(screen.getByRole('button', { name: /next page/i }));
+  expect(screen.getByText('Puja Sharma family')).toBeVisible();
+  await user.type(screen.getByRole('searchbox', { name: /search guests/i }), 'puja');
+  expect(screen.getByText('Puja Sharma family')).toBeVisible();
+  expect(screen.queryByText('Guest family 1')).not.toBeInTheDocument();
 });
 
 it('keeps task creation on the Tasks page instead of Today', async () => {
