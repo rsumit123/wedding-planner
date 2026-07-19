@@ -16,7 +16,12 @@ async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
 
 async function upload<T>(path: string, file: File): Promise<T> {
   const form = new FormData(); form.append('file', file);
-  const response = await fetch(`${API}${path}`, { credentials: 'include', method: 'POST', body: form });
+  let response: Response;
+  try {
+    response = await fetch(`${API}${path}`, { credentials: 'include', method: 'POST', body: form });
+  } catch {
+    throw new Error('Could not reach the wedding API. Check your connection and try again.');
+  }
   if (!response.ok) throw new Error('Could not upload this image.');
   return response.json() as Promise<T>;
 }

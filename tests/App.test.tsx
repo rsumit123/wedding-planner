@@ -44,6 +44,29 @@ it('opens the real budget manager from the home-page shortcut', async () => {
   expect(screen.getByLabelText(/receipt image/i)).toHaveAttribute('type', 'file');
 });
 
+it('keeps a vendor when its first receipt upload fails', async () => {
+  const user = userEvent.setup();
+  const vendor = { id: 44, name: 'Photo vendor', category: 'Decor', phone: '', side: 'both' as const, amount: 1000, paid_amount: 0, attachments: [] };
+  vi.spyOn(api, 'me').mockResolvedValue({ username: 'sumit-puja' });
+  vi.spyOn(api, 'login').mockResolvedValue({ username: 'sumit-puja' });
+  vi.spyOn(api, 'tasks').mockResolvedValue([]);
+  vi.spyOn(api, 'events').mockResolvedValue([]);
+  vi.spyOn(api, 'vendors').mockResolvedValue([]);
+  vi.spyOn(api, 'budgetSummary').mockResolvedValue({ planned_total: 0, paid_total: 0, due_total: 0 });
+  vi.spyOn(api, 'addVendor').mockResolvedValue(vendor);
+  vi.spyOn(api, 'uploadVendorAttachment').mockRejectedValue(new Error('Failed to fetch'));
+  render(<App />);
+  await user.click(screen.getByRole('button', { name: /planner login/i }));
+  await user.click(await screen.findByRole('button', { name: 'Open budget and vendors' }));
+  await user.type(screen.getByLabelText('Vendor name'), 'Photo vendor');
+  await user.type(screen.getByLabelText('Category'), 'Decor');
+  await user.type(screen.getByLabelText('Total cost (₹)'), '1000');
+  await user.type(screen.getByLabelText('Paid so far (₹)'), '0');
+  await user.upload(screen.getByLabelText(/receipt image/i), new File(['receipt'], 'receipt.png', { type: 'image/png' }));
+  await user.click(screen.getByRole('button', { name: 'Add vendor' }));
+  expect(await screen.findByText(/vendor was saved, but the receipt did not upload/i)).toBeVisible();
+});
+
 it('brings the guest edit form into view after tapping a guest pencil', async () => {
   const user = userEvent.setup();
   const scrollIntoView = vi.fn();
