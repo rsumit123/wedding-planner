@@ -1193,7 +1193,7 @@ function BudgetManager() {
                 {v.phone && (
                   <a
                     className="vendor-phone"
-                    href={`tel:${v.phone.replace(/[^+\\d]/g, "")}`}
+                    href={`tel:${v.phone.replace(/[^+\d]/g, "")}`}
                   >
                     {v.phone}
                   </a>

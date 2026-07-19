@@ -111,6 +111,21 @@ it('removes a vendor from the budget list', async () => {
   expect(deleteVendor).toHaveBeenCalledWith(44);
 });
 
+it('uses a dialable link for a vendor contact number', async () => {
+  const user = userEvent.setup();
+  const vendor = { id: 44, name: 'Band vendor', category: 'Music', phone: '+91 99341 26059', side: 'groom' as const, amount: 25000, paid_amount: 2000, attachments: [] };
+  vi.spyOn(api, 'me').mockResolvedValue({ username: 'sumit-puja' });
+  vi.spyOn(api, 'login').mockResolvedValue({ username: 'sumit-puja' });
+  vi.spyOn(api, 'tasks').mockResolvedValue([]);
+  vi.spyOn(api, 'events').mockResolvedValue([]);
+  vi.spyOn(api, 'vendors').mockResolvedValue([vendor]);
+  vi.spyOn(api, 'budgetSummary').mockResolvedValue({ planned_total: 25000, paid_total: 2000, due_total: 23000 });
+  render(<App />);
+  await user.click(screen.getByRole('button', { name: /planner login/i }));
+  await user.click(await screen.findByRole('button', { name: 'Open budget and vendors' }));
+  expect(screen.getByRole('link', { name: '+91 99341 26059' })).toHaveAttribute('href', 'tel:+919934126059');
+});
+
 it('brings the vendor edit form into view after tapping a vendor pencil', async () => {
   const user = userEvent.setup();
   const scrollIntoView = vi.fn();
