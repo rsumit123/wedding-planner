@@ -47,3 +47,12 @@ it('brings the guest edit form into view after tapping a guest pencil', async ()
   expect(screen.getByRole('heading', { name: 'Edit guest or family' })).toBeVisible();
   expect(scrollIntoView).toHaveBeenCalled();
 });
+
+it('keeps task creation on the Tasks page instead of Today', async () => {
+  vi.spyOn(api, 'me').mockResolvedValue({ username: 'sumit-puja' });
+  vi.spyOn(api, 'tasks').mockResolvedValue([]);
+  render(<App />);
+  expect(screen.queryByPlaceholderText('Add something to remember…')).not.toBeInTheDocument();
+  await userEvent.click((await screen.findAllByRole('button', { name: 'Tasks' }))[0]);
+  expect(screen.getByPlaceholderText('Add something to remember…')).toBeVisible();
+});

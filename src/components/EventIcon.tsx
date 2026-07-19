@@ -1,6 +1,6 @@
 import { Flower2, HeartHandshake, PartyPopper, Sun, UtensilsCrossed } from 'lucide-react';
 
-export type EventIconKind = 'tilak' | 'haldi' | 'wedding' | 'vidai' | 'reception';
+export type EventIconKind = 'tilak' | 'haldi' | 'wedding' | 'vidai' | 'reception' | 'generic';
 
 const icons = {
   tilak: HeartHandshake,
@@ -8,6 +8,7 @@ const icons = {
   wedding: Flower2,
   vidai: UtensilsCrossed,
   reception: PartyPopper,
+  generic: Flower2,
 };
 
 export function EventIcon({ kind, label, size = 23 }: { kind: EventIconKind; label: string; size?: number }) {
