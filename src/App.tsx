@@ -947,6 +947,8 @@ function BudgetManager() {
   const [paid, setPaid] = useState("");
   const [editing, setEditing] = useState<ApiVendor | null>(null);
   const [error, setError] = useState("");
+  const [savePhase, setSavePhase] = useState<"saving" | "uploading" | null>(null);
+  const [uploadingVendorId, setUploadingVendorId] = useState<number | null>(null);
   const formRef = useRef<HTMLFormElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const load = async () => {
@@ -994,6 +996,8 @@ function BudgetManager() {
       setError("Enter a valid vendor, category, total, and paid amount.");
       return;
     }
+    setError("");
+    setSavePhase("saving");
     try {
       const vendor = editing
         ? await api.updateVendor(
@@ -1015,12 +1019,13 @@ function BudgetManager() {
           );
       if (receiptFile) {
         try {
+          setSavePhase("uploading");
           await api.uploadVendorAttachment(vendor.id, receiptFile);
-        } catch {
+        } catch (err) {
           reset();
           await load();
           setError(
-            "Vendor was saved, but the receipt did not upload. Use Upload another receipt below to try again.",
+            `Vendor was saved, but the receipt did not upload: ${(err as Error).message} Use Upload another receipt below to try again.`,
           );
           return;
         }
@@ -1029,15 +1034,21 @@ function BudgetManager() {
       await load();
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setSavePhase(null);
     }
   };
   const upload = async (vendor: ApiVendor, file?: File) => {
     if (!file) return;
+    setError("");
+    setUploadingVendorId(vendor.id);
     try {
       await api.uploadVendorAttachment(vendor.id, file);
       await load();
     } catch (err) {
       setError((err as Error).message);
+    } finally {
+      setUploadingVendorId(null);
     }
   };
   const removeAttachment = async (id: number) => {
@@ -1083,7 +1094,7 @@ function BudgetManager() {
         </article>
       </div>
       <div className="budget-layout">
-        <form ref={formRef} className="budget-form" onSubmit={save}>
+        <form ref={formRef} className="budget-form" onSubmit={save} aria-busy={savePhase !== null}>
           <h3>{editing ? "Edit vendor" : "Add a vendor"}</h3>
           <label>
             Vendor name
@@ -1154,8 +1165,8 @@ function BudgetManager() {
             />
           </label>
           <div className="guest-form-actions">
-            <button className="add-button" type="submit">
-              {editing ? "Save vendor" : "Add vendor"}
+            <button className="add-button" type="submit" disabled={savePhase !== null}>
+              {savePhase === "uploading" ? "Uploading receipt…" : savePhase === "saving" ? "Saving vendor…" : editing ? "Save vendor" : "Add vendor"}
             </button>
             {editing && (
               <button className="cancel-edit" type="button" onClick={reset}>
@@ -1192,11 +1203,12 @@ function BudgetManager() {
                   label="Receipt images"
                   onRemove={removeAttachment}
                 />
-                <label className="image-upload">
-                  Upload another receipt
+                <label className="image-upload" aria-busy={uploadingVendorId === v.id}>
+                  {uploadingVendorId === v.id ? "Uploading receipt…" : "Upload another receipt"}
                   <input
                     type="file"
                     accept="image/jpeg,image/png,image/webp"
+                    disabled={uploadingVendorId !== null}
                     onChange={(e) => upload(v, e.target.files?.[0])}
                   />
                 </label>

@@ -22,6 +22,7 @@ async function upload<T>(path: string, file: File): Promise<T> {
   } catch {
     throw new Error('Could not reach the wedding API. Check your connection and try again.');
   }
+  if (response.status === 413) throw new Error('Image is too large. Please choose a file under 8 MB.');
   if (!response.ok) throw new Error('Could not upload this image.');
   return response.json() as Promise<T>;
 }

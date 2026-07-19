@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import App from '../src/App';
-import { api } from '../src/api';
+import { api, type Attachment } from '../src/api';
 
 it('opens on the public invitation and moves to organiser login from its header', async () => {
   const user = userEvent.setup();
@@ -65,6 +65,32 @@ it('keeps a vendor when its first receipt upload fails', async () => {
   await user.upload(screen.getByLabelText(/receipt image/i), new File(['receipt'], 'receipt.png', { type: 'image/png' }));
   await user.click(screen.getByRole('button', { name: 'Add vendor' }));
   expect(await screen.findByText(/vendor was saved, but the receipt did not upload/i)).toBeVisible();
+});
+
+it('shows receipt upload progress while saving a vendor', async () => {
+  const user = userEvent.setup();
+  const vendor = { id: 44, name: 'Photo vendor', category: 'Decor', phone: '', side: 'both' as const, amount: 1000, paid_amount: 0, attachments: [] };
+  let finishUpload: (attachment: Attachment) => void = () => undefined;
+  vi.spyOn(api, 'me').mockResolvedValue({ username: 'sumit-puja' });
+  vi.spyOn(api, 'login').mockResolvedValue({ username: 'sumit-puja' });
+  vi.spyOn(api, 'tasks').mockResolvedValue([]);
+  vi.spyOn(api, 'events').mockResolvedValue([]);
+  vi.spyOn(api, 'vendors').mockResolvedValue([]);
+  vi.spyOn(api, 'budgetSummary').mockResolvedValue({ planned_total: 0, paid_total: 0, due_total: 0 });
+  vi.spyOn(api, 'addVendor').mockResolvedValue(vendor);
+  vi.spyOn(api, 'uploadVendorAttachment').mockImplementation(() => new Promise<Attachment>((resolve) => { finishUpload = resolve; }));
+  render(<App />);
+  await user.click(screen.getByRole('button', { name: /planner login/i }));
+  await user.click(await screen.findByRole('button', { name: 'Open budget and vendors' }));
+  await user.type(screen.getByLabelText('Vendor name'), 'Photo vendor');
+  await user.type(screen.getByLabelText('Category'), 'Decor');
+  await user.type(screen.getByLabelText('Total cost (₹)'), '1000');
+  await user.type(screen.getByLabelText('Paid so far (₹)'), '0');
+  await user.upload(screen.getByLabelText(/receipt image/i), new File(['receipt'], 'receipt.png', { type: 'image/png' }));
+  await user.click(screen.getByRole('button', { name: 'Add vendor' }));
+  expect(await screen.findByRole('button', { name: 'Uploading receipt…' })).toBeDisabled();
+  finishUpload({ id: 1, filename: 'receipt.png', mime_type: 'image/png', url: '/attachments/1' });
+  expect(await screen.findByRole('button', { name: 'Add vendor' })).toBeEnabled();
 });
 
 it('removes a vendor from the budget list', async () => {
