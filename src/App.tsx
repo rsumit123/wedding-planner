@@ -1,0 +1,53 @@
+import { useMemo, useState } from 'react';
+import { CalendarDays, CheckCircle2, ChevronRight, CircleDollarSign, MapPin, Plus, UsersRound } from 'lucide-react';
+import cutout from './assets/sumit-puja-cutout.png';
+import { EventIcon, type EventIconKind } from './components/EventIcon';
+
+type Event = { date: string; day: string; title: string; note: string; icon: EventIconKind; accent: string };
+const events: Event[] = [
+  { date: '28', day: 'NOV', title: 'Lagan & Tilak', note: 'A beginning, blessed with family.', icon: 'tilak', accent: 'pink' },
+  { date: '30', day: 'NOV', title: 'Haldi & Matkor', note: 'Colour, laughter, and all the good wishes.', icon: 'haldi', accent: 'yellow' },
+  { date: '01', day: 'DEC', title: 'Wedding ceremony', note: 'After 1:06 PM', icon: 'wedding', accent: 'red' },
+  { date: '02', day: 'DEC', title: 'Vidai', note: 'After 8:00 AM', icon: 'vidai', accent: 'blue' },
+  { date: '03', day: 'DEC', title: 'Reception party', note: 'An evening with everyone we love.', icon: 'reception', accent: 'gold' },
+];
+const nav = ['Today', 'Tasks', 'Events', 'Guests & RSVPs', 'Budget & vendors', 'Guest page'];
+
+function daysUntilWedding() {
+  const today = new Date(); const wedding = new Date('2026-12-01T13:06:00');
+  return Math.max(0, Math.ceil((wedding.getTime() - today.getTime()) / 86400000));
+}
+
+export default function App() {
+  const [page, setPage] = useState('Today');
+  const [tasks, setTasks] = useState([{ text: 'Confirm decorator shortlist', meta: 'Haldi & Matkor · due 5 Aug', done: false }, { text: 'Share first guest list with family', meta: 'Guests & RSVPs · due 8 Aug', done: false }, { text: 'Choose reception music', meta: 'Reception party · due 15 Aug', done: true }]);
+  const [draft, setDraft] = useState('');
+  const days = useMemo(daysUntilWedding, []);
+  const guestView = page === 'Guest page';
+  const addTask = () => { if (draft.trim()) { setTasks([{ text: draft.trim(), meta: 'New task · no date yet', done: false }, ...tasks]); setDraft(''); } };
+  if (guestView) return <InvitePage onBack={() => setPage('Today')} />;
+  return <div className="app-shell">
+    <aside className="sidebar">
+      <div className="side-brand"><span className="mini-rangoli">✦</span><span>SUMIT &amp; PUJA</span></div>
+      <nav>{nav.map(item => <button key={item} className={page === item ? 'nav-item active' : 'nav-item'} onClick={() => setPage(item)}>{item === 'Today' && <span className="nav-dot" />}{item}</button>)}</nav>
+      <div className="side-footer"><span>Wedding week</span><strong>28 Nov — 3 Dec</strong></div>
+    </aside>
+    <main className="workspace">
+      <section className="hero"><div className="hero-copy"><p className="eyebrow">Our wedding planner</p><h1>Sumit <em>&amp;</em> Puja</h1><p className="hero-sub">Five beautiful days. One shared place to make every detail feel easy.</p><div className="hero-actions"><button className="ghost-button" onClick={() => setPage('Events')}><CalendarDays size={17}/> View celebrations</button><button className="ghost-button" onClick={() => setPage('Guest page')}>Guest page <ChevronRight size={16}/></button></div></div><div className="hero-art"><div className="sun-disc"/><img src={cutout} alt="Sumit and Puja" /></div></section>
+      <div className="mobile-nav">{nav.map(item => <button key={item} onClick={() => setPage(item)} className={page === item ? 'selected' : ''}>{item}</button>)}</div>
+      {page === 'Today' ? <Dashboard days={days} tasks={tasks} setTasks={setTasks} draft={draft} setDraft={setDraft} addTask={addTask} /> : <Section page={page} />}
+    </main>
+  </div>;
+}
+
+function Dashboard({ days, tasks, setTasks, draft, setDraft, addTask }: { days: number; tasks: { text: string; meta: string; done: boolean }[]; setTasks: React.Dispatch<React.SetStateAction<{ text: string; meta: string; done: boolean }[]>>; draft: string; setDraft: React.Dispatch<React.SetStateAction<string>>; addTask: () => void }) {
+  return <><section className="overview"><div><p className="eyebrow ink">Today’s focus</p><h2>Little steps, beautifully held.</h2><p className="muted">Keep the important things moving, one shared update at a time.</p></div><div className="countdown"><span>Days to the wedding</span><strong>{days}</strong><small>1 December 2026</small></div></section>
+    <section className="section-head"><div><p className="eyebrow ink">The celebrations</p><h2>Save these dates</h2></div><button className="text-button">See all details <ChevronRight size={16}/></button></section>
+    <div className="event-strip">{events.map(event => <article key={event.title} className={`event-card ${event.accent}`}><div className="event-top"><span className="event-date"><b>{event.date}</b>{event.day}</span><span className="event-icon"><EventIcon kind={event.icon} label={event.title} /></span></div><h3>{event.title}</h3><p>{event.note}</p></article>)}</div>
+    <section className="planning-grid"><div className="task-panel"><div className="section-head compact"><div><p className="eyebrow ink">Planning together</p><h2>What needs love</h2></div><button className="add-button" onClick={() => document.getElementById('new-task')?.focus()}><Plus size={17}/> Add task</button></div><div className="task-input"><input id="new-task" value={draft} onChange={e => setDraft(e.target.value)} onKeyDown={e => e.key === 'Enter' && addTask()} placeholder="Add something to remember…"/><button onClick={addTask} aria-label="Add task"><Plus size={18}/></button></div><div className="task-list">{tasks.map((task, index) => <label className={task.done ? 'task done' : 'task'} key={task.text}><input type="checkbox" checked={task.done} onChange={() => setTasks(tasks.map((t, i) => i === index ? { ...t, done: !t.done } : t))}/><span className="check"/><span><strong>{task.text}</strong><small>{task.meta}</small></span></label>)}</div></div>
+      <aside className="right-rail"><div className="quick-card"><p className="eyebrow">Family pulse</p><div className="avatars"><span>SK</span><span>PK</span><span>AM</span><span>+4</span></div><h3>Everyone can pitch in.</h3><p>Share a task, a detail, or a decision. Every update is kept in one place.</p><button>Invite family <ChevronRight size={16}/></button></div><div className="quick-links"><button><UsersRound size={18}/><span><strong>Guests & RSVPs</strong><small>Start your family list</small></span><ChevronRight size={16}/></button><button><CircleDollarSign size={18}/><span><strong>Budget & vendors</strong><small>Keep every booking clear</small></span><ChevronRight size={16}/></button></div></aside></section></>;
+}
+
+function Section({ page }: { page: string }) { return <section className="placeholder-page"><p className="eyebrow ink">{page}</p><h2>{page === 'Events' ? 'Every celebration, in one rhythm.' : `${page}, beautifully organised.`}</h2><p>This section is ready for your family’s details. For now, use Today to add shared tasks and open the guest page preview.</p>{page === 'Events' && <div className="event-list">{events.map(e => <div key={e.title}><EventIcon kind={e.icon} label={e.title}/><span><strong>{e.title}</strong><small>{e.day} {e.date}, 2026 · {e.note}</small></span></div>)}</div>}</section>; }
+
+function InvitePage({ onBack }: { onBack: () => void }) { return <div className="invite"><header><button onClick={onBack}>← Planner</button><span>SUMIT &amp; PUJA</span></header><section className="invite-hero"><div><p className="eyebrow">With the blessings of our families</p><h1>Sumit <em>&amp;</em> Puja</h1><p>Invite you to celebrate a new beginning.</p><button><MapPin size={17}/> Venue details coming soon</button></div><img src={cutout} alt="Sumit and Puja"/></section><section className="invite-events"><p className="eyebrow ink">The celebrations</p><h2>Come celebrate with us</h2><div>{events.map(e => <article key={e.title}><span className="event-icon"><EventIcon kind={e.icon} label={e.title}/></span><span><strong>{e.title}</strong><small>{e.date} {e.day} · {e.note}</small></span></article>)}</div><a href="https://wa.me/" target="_blank">Questions? Message the family on WhatsApp</a></section></div>; }
