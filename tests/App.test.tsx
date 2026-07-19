@@ -17,3 +17,8 @@ it('keeps the wedding portrait free of a decorative overlay', () => {
   const { container } = render(<App />);
   expect(container.querySelector('.sun-disc')).not.toBeInTheDocument();
 });
+
+it('uses a dedicated mobile-friendly organiser login layout', () => {
+  render(<App />);
+  expect(screen.getByRole('main')).toHaveClass('organiser-login');
+});

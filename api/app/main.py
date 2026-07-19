@@ -39,11 +39,12 @@ class Login(BaseModel): username: str; password: str
 class TaskIn(BaseModel): title: str = Field(min_length=1, max_length=200); assignee_name: str|None = None; due_date: date|None = None; event_id: int|None = None; status: Literal['open','done'] = 'open'
 class GuestIn(BaseModel): name: str = Field(min_length=1, max_length=160); side: Literal['bride','groom'] = 'groom'; phone: str|None = None; note: str = ''
 class InvitationIn(BaseModel): guest_id: int; all_events: bool = False; event_ids: list[int] = []
+class GuestUpdateIn(BaseModel): name: str = Field(min_length=1, max_length=160); side: Literal['bride','groom']; all_events: bool = False; event_ids: list[int] = []
 class RsvpIn(BaseModel): statuses: dict[int, Literal['pending','accepted','declined']]; note: str|None = None
 
 app = FastAPI(title='Sumit & Puja Wedding API')
 app.add_middleware(CORSMiddleware, allow_origins=['https://wedding.skdev.one'], allow_credentials=True, allow_methods=['GET','POST','PATCH','OPTIONS'], allow_headers=['Content-Type'])
-EVENTS = [('tilak','Lagan & Tilak','2026-11-28',''),('haldi','Haldi & Matkor','2026-11-30',''),('wedding','Wedding ceremony','2026-12-01','After 1:06 PM'),('vidai','Vidai','2026-12-02','After 8:00 AM'),('reception','Reception party','2026-12-03','')]
+EVENTS = [('tilak','Lagan & Tilak','2026-11-28',''),('haldi','Haldi & Matkor','2026-11-30',''),('wedding','Wedding ceremony','2026-12-01','After 1:06 PM'),('reception','Reception party','2026-12-03','')]
 
 @app.on_event('startup')
 def startup():
@@ -52,6 +53,10 @@ def startup():
         columns = {row[1] for row in connection.exec_driver_sql('PRAGMA table_info(guests)')}
         if 'side' not in columns: connection.exec_driver_sql("ALTER TABLE guests ADD COLUMN side VARCHAR NOT NULL DEFAULT 'groom'")
     with SessionLocal() as s:
+        vidai = s.scalar(select(Event).where(Event.slug == 'vidai')); wedding = s.scalar(select(Event).where(Event.slug == 'wedding'))
+        if vidai and wedding:
+            for invitation_event in s.scalars(select(InvitationEvent).where(InvitationEvent.event_id == vidai.id)): invitation_event.event_id = wedding.id
+            s.delete(vidai); s.commit()
         if not s.scalar(select(Event.id).limit(1)):
             s.add_all([Event(slug=a,name=b,event_date=date.fromisoformat(c),time_note=d) for a,b,c,d in EVENTS]); s.commit()
 def db():
@@ -92,10 +97,29 @@ def update_task(task_id:int,data:TaskIn,name:str=Depends(user),s:Session=Depends
     for key,value in data.model_dump().items(): setattr(t,key,value)
     s.commit();audit(s,name,f'Updated task: {t.title}');return {'id':t.id,'title':t.title,'status':t.status}
 @app.get('/guests')
-def guests(_:str=Depends(user),s:Session=Depends(db)): return [{'id':g.id,'name':g.name,'side':g.side,'phone':g.phone,'note':g.note} for g in s.scalars(select(Guest).order_by(Guest.name))]
+def guests(_:str=Depends(user),s:Session=Depends(db)):
+    result=[]
+    for g in s.scalars(select(Guest).order_by(Guest.name)):
+        invitations=list(s.scalars(select(Invitation).where(Invitation.guest_id == g.id))); invitation_ids=[i.id for i in invitations]
+        event_ids=sorted(set(s.scalars(select(InvitationEvent.event_id).where(InvitationEvent.invitation_id.in_(invitation_ids))).all())) if invitation_ids else []
+        result.append({'id':g.id,'name':g.name,'side':g.side,'phone':g.phone,'note':g.note,'all_events':any(i.all_events for i in invitations),'event_ids':event_ids})
+    return result
 @app.post('/guests')
 def add_guest(data:GuestIn,name:str=Depends(user),s:Session=Depends(db)):
-    g=Guest(**data.model_dump());s.add(g);s.commit();s.refresh(g);audit(s,name,f'Added guest: {g.name}');return {'id':g.id,'name':g.name,'side':g.side,'phone':g.phone,'note':g.note}
+    g=Guest(**data.model_dump());s.add(g);s.commit();s.refresh(g);audit(s,name,f'Added guest: {g.name}');return {'id':g.id,'name':g.name,'side':g.side,'phone':g.phone,'note':g.note,'all_events':False,'event_ids':[]}
+@app.patch('/guests/{guest_id}')
+def update_guest(guest_id:int,data:GuestUpdateIn,name:str=Depends(user),s:Session=Depends(db)):
+    guest=s.get(Guest,guest_id)
+    if not guest: raise HTTPException(404,'Guest not found')
+    ids=[event.id for event in s.scalars(select(Event))] if data.all_events else data.event_ids
+    if not ids: raise HTTPException(422,'Select at least one event')
+    guest.name=data.name; guest.side=data.side
+    invitations=list(s.scalars(select(Invitation).where(Invitation.guest_id == guest.id)))
+    for invitation in invitations:
+        for invitation_event in s.scalars(select(InvitationEvent).where(InvitationEvent.invitation_id == invitation.id)): s.delete(invitation_event)
+        s.delete(invitation)
+    invitation=Invitation(guest_id=guest.id,token=uuid4().hex,all_events=data.all_events); s.add(invitation); s.flush(); s.add_all([InvitationEvent(invitation_id=invitation.id,event_id=event_id) for event_id in ids]); s.commit(); audit(s,name,f'Updated guest: {guest.name}')
+    return {'id':guest.id,'name':guest.name,'side':guest.side,'phone':guest.phone,'note':guest.note,'all_events':data.all_events,'event_ids':sorted(set(ids))}
 @app.get('/guest-summary')
 def guest_summary(_:str=Depends(user),s:Session=Depends(db)):
     guests = list(s.scalars(select(Guest)))

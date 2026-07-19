@@ -1,7 +1,7 @@
 const API = 'https://wedding-api.skdev.one';
 
 export type ApiTask = { id: number; title: string; assignee_name: string | null; due_date: string | null; event_id: number | null; status: 'open' | 'done' };
-export type ApiGuest = { id: number; name: string; side: 'bride' | 'groom'; phone: string | null; note: string };
+export type ApiGuest = { id: number; name: string; side: 'bride' | 'groom'; phone: string | null; note: string; all_events: boolean; event_ids: number[] };
 export type ApiEvent = { id: number; slug: string; name: string; date: string; time_note: string };
 export type GuestSummary = { total: number; bride_total: number; groom_total: number; events: Array<ApiEvent & { guest_count: number }> };
 
@@ -23,4 +23,5 @@ export const api = {
   summary: () => request<GuestSummary>('/guest-summary'),
   addGuest: (name: string, side: 'bride' | 'groom') => request<ApiGuest>('/guests', { method: 'POST', body: JSON.stringify({ name, side }) }),
   inviteGuest: (guestId: number, allEvents: boolean, eventIds: number[]) => request<{ id: number; token: string }>('/invitations', { method: 'POST', body: JSON.stringify({ guest_id: guestId, all_events: allEvents, event_ids: eventIds }) }),
+  updateGuest: (id: number, name: string, side: 'bride' | 'groom', allEvents: boolean, eventIds: number[]) => request<ApiGuest>(`/guests/${id}`, { method: 'PATCH', body: JSON.stringify({ name, side, all_events: allEvents, event_ids: eventIds }) }),
 };
