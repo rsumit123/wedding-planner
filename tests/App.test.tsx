@@ -32,3 +32,18 @@ it('opens the real budget manager from the home-page shortcut', async () => {
   await userEvent.click(await screen.findByRole('button', { name: 'Open budget and vendors' }));
   expect(screen.getByRole('heading', { name: /budget, clearly held/i })).toBeVisible();
 });
+
+it('brings the guest edit form into view after tapping a guest pencil', async () => {
+  const scrollIntoView = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView });
+  vi.spyOn(api, 'me').mockResolvedValue({ username: 'sumit-puja' });
+  vi.spyOn(api, 'tasks').mockResolvedValue([]);
+  vi.spyOn(api, 'guests').mockResolvedValue([{ id: 9, name: 'Test family', side: 'bride', phone: null, note: '', all_events: true, event_ids: [1, 2, 3, 5] }]);
+  vi.spyOn(api, 'summary').mockResolvedValue({ total: 1, bride_total: 1, groom_total: 0, events: [] });
+  vi.spyOn(api, 'events').mockResolvedValue([]);
+  render(<App />);
+  await userEvent.click(await screen.findByRole('button', { name: 'Open guests and RSVPs' }));
+  await userEvent.click(await screen.findByRole('button', { name: 'Edit Test family' }));
+  expect(screen.getByRole('heading', { name: 'Edit guest or family' })).toBeVisible();
+  expect(scrollIntoView).toHaveBeenCalled();
+});
