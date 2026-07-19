@@ -47,6 +47,7 @@ export const api = {
   budgetSummary: () => request<BudgetSummary>('/budget-summary'),
   addVendor: (name: string, category: string, phone: string, side: 'bride' | 'groom' | 'both', amount: number, paidAmount: number) => request<ApiVendor>('/vendors', { method: 'POST', body: JSON.stringify({ name, category, phone, side, amount, paid_amount: paidAmount }) }),
   updateVendor: (id: number, name: string, category: string, phone: string, side: 'bride' | 'groom' | 'both', amount: number, paidAmount: number) => request<ApiVendor>(`/vendors/${id}`, { method: 'PATCH', body: JSON.stringify({ name, category, phone, side, amount, paid_amount: paidAmount }) }),
+  deleteVendor: (id: number) => request<{ ok: boolean }>(`/vendors/${id}`, { method: 'DELETE' }),
   uploadVendorAttachment: (id: number, file: File) => upload<Attachment>(`/vendors/${id}/attachments`, file),
   uploadEventAttachment: (id: number, file: File) => upload<Attachment>(`/events/${id}/attachments`, file),
   deleteAttachment: (id: number) => request<{ ok: boolean }>(`/attachments/${id}`, { method: 'DELETE' }),

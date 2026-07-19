@@ -21,3 +21,15 @@ def test_vendor_totals_and_updates_are_available_to_organisers():
         assert updated.json()['side'] == 'both'
         assert updated.json()['phone'] == '+91 99999 99999'
         assert client.get('/budget-summary').json()['due_total'] == before['due_total']
+
+
+def test_organiser_can_remove_a_vendor_and_its_budget_amounts():
+    with TestClient(app) as client:
+        client.post('/auth/login', json={'username': 'sumit-puja', 'password': 'test-password'})
+        before = client.get('/budget-summary').json()
+        vendor = client.post('/vendors', json={'name': 'Temporary decorator', 'category': 'Decor', 'side': 'both', 'amount': 5000, 'paid_amount': 1000}).json()
+        removed = client.delete(f'/vendors/{vendor["id"]}')
+        assert removed.status_code == 200
+        assert removed.json() == {'ok': True}
+        assert all(item['id'] != vendor['id'] for item in client.get('/vendors').json())
+        assert client.get('/budget-summary').json() == before

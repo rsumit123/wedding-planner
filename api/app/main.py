@@ -187,6 +187,15 @@ def update_vendor(vendor_id:int,data:VendorIn,name:str=Depends(user),s:Session=D
     if not vendor: raise HTTPException(404,'Vendor not found')
     for key,value in data.model_dump().items(): setattr(vendor,key,value)
     s.commit(); audit(s,name,f'Updated vendor: {vendor.name}'); return vendor_json(vendor,s)
+@app.delete('/vendors/{vendor_id}')
+def delete_vendor(vendor_id:int,name:str=Depends(user),s:Session=Depends(db)):
+    vendor=s.get(Vendor,vendor_id)
+    if not vendor: raise HTTPException(404,'Vendor not found')
+    for attachment in s.scalars(select(Attachment).where(Attachment.owner_type == 'vendor', Attachment.owner_id == vendor.id)):
+        path=Path('data',attachment.storage_path)
+        if path.is_file(): path.unlink()
+        s.delete(attachment)
+    vendor_name=vendor.name; s.delete(vendor); s.commit(); audit(s,name,f'Removed vendor: {vendor_name}'); return {'ok':True}
 @app.get('/budget-summary')
 def budget_summary(_:str=Depends(user),s:Session=Depends(db)):
     vendors=list(s.scalars(select(Vendor))); planned=sum(v.amount for v in vendors); paid=sum(v.paid_amount for v in vendors)

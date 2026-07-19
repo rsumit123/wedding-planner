@@ -947,6 +947,8 @@ function BudgetManager() {
   const [paid, setPaid] = useState("");
   const [editing, setEditing] = useState<ApiVendor | null>(null);
   const [error, setError] = useState("");
+  const formRef = useRef<HTMLFormElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
   const load = async () => {
     const [v, s] = await Promise.all([api.vendors(), api.budgetSummary()]);
     setVendors(v);
@@ -975,6 +977,8 @@ function BudgetManager() {
     setAmount(String(v.amount));
     setPaid(String(v.paid_amount));
     setError("");
+    formRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+    inputRef.current?.focus();
   };
   const save = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1045,6 +1049,16 @@ function BudgetManager() {
       setError((err as Error).message);
     }
   };
+  const remove = async (vendor: ApiVendor) => {
+    if (!window.confirm(`Remove ${vendor.name} from the budget? This also removes its receipt images.`)) return;
+    try {
+      await api.deleteVendor(vendor.id);
+      if (editing?.id === vendor.id) reset();
+      await load();
+    } catch (err) {
+      setError((err as Error).message);
+    }
+  };
   return (
     <section className="budget-manager">
       <div className="guest-heading">
@@ -1069,11 +1083,12 @@ function BudgetManager() {
         </article>
       </div>
       <div className="budget-layout">
-        <form className="budget-form" onSubmit={save}>
+        <form ref={formRef} className="budget-form" onSubmit={save}>
           <h3>{editing ? "Edit vendor" : "Add a vendor"}</h3>
           <label>
             Vendor name
             <input
+              ref={inputRef}
               value={name}
               onChange={(e) => setName(e.target.value)}
               required
@@ -1200,6 +1215,13 @@ function BudgetManager() {
                   aria-label={`Edit ${v.name}`}
                 >
                   <Pencil size={13} />
+                </button>
+                <button
+                  onClick={() => remove(v)}
+                  type="button"
+                  aria-label={`Remove ${v.name}`}
+                >
+                  <Trash2 size={13} />
                 </button>
               </span>
             </article>

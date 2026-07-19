@@ -67,6 +67,43 @@ it('keeps a vendor when its first receipt upload fails', async () => {
   expect(await screen.findByText(/vendor was saved, but the receipt did not upload/i)).toBeVisible();
 });
 
+it('removes a vendor from the budget list', async () => {
+  const user = userEvent.setup();
+  const vendor = { id: 44, name: 'Band vendor', category: 'Music', phone: '', side: 'groom' as const, amount: 25000, paid_amount: 2000, attachments: [] };
+  vi.spyOn(api, 'me').mockResolvedValue({ username: 'sumit-puja' });
+  vi.spyOn(api, 'login').mockResolvedValue({ username: 'sumit-puja' });
+  vi.spyOn(api, 'tasks').mockResolvedValue([]);
+  vi.spyOn(api, 'events').mockResolvedValue([]);
+  vi.spyOn(api, 'vendors').mockResolvedValue([vendor]);
+  vi.spyOn(api, 'budgetSummary').mockResolvedValue({ planned_total: 25000, paid_total: 2000, due_total: 23000 });
+  const deleteVendor = vi.spyOn(api, 'deleteVendor').mockResolvedValue({ ok: true });
+  vi.spyOn(window, 'confirm').mockReturnValue(true);
+  render(<App />);
+  await user.click(screen.getByRole('button', { name: /planner login/i }));
+  await user.click(await screen.findByRole('button', { name: 'Open budget and vendors' }));
+  await user.click(screen.getByRole('button', { name: 'Remove Band vendor' }));
+  expect(deleteVendor).toHaveBeenCalledWith(44);
+});
+
+it('brings the vendor edit form into view after tapping a vendor pencil', async () => {
+  const user = userEvent.setup();
+  const scrollIntoView = vi.fn();
+  Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView });
+  const vendor = { id: 44, name: 'Band vendor', category: 'Music', phone: '', side: 'groom' as const, amount: 25000, paid_amount: 2000, attachments: [] };
+  vi.spyOn(api, 'me').mockResolvedValue({ username: 'sumit-puja' });
+  vi.spyOn(api, 'login').mockResolvedValue({ username: 'sumit-puja' });
+  vi.spyOn(api, 'tasks').mockResolvedValue([]);
+  vi.spyOn(api, 'events').mockResolvedValue([]);
+  vi.spyOn(api, 'vendors').mockResolvedValue([vendor]);
+  vi.spyOn(api, 'budgetSummary').mockResolvedValue({ planned_total: 25000, paid_total: 2000, due_total: 23000 });
+  render(<App />);
+  await user.click(screen.getByRole('button', { name: /planner login/i }));
+  await user.click(await screen.findByRole('button', { name: 'Open budget and vendors' }));
+  await user.click(screen.getByRole('button', { name: 'Edit Band vendor' }));
+  expect(screen.getByRole('heading', { name: 'Edit vendor' })).toBeVisible();
+  expect(scrollIntoView).toHaveBeenCalled();
+});
+
 it('brings the guest edit form into view after tapping a guest pencil', async () => {
   const user = userEvent.setup();
   const scrollIntoView = vi.fn();
