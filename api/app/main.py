@@ -3,8 +3,10 @@ import re
 from datetime import date, datetime
 from pathlib import Path
 from typing import Literal
+from urllib.parse import quote
 from uuid import uuid4
 
+import boto3
 from fastapi import Cookie, Depends, FastAPI, File, HTTPException, Response, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
@@ -40,6 +42,8 @@ class Vendor(Base):
     __tablename__ = 'vendors'; id: Mapped[int] = mapped_column(primary_key=True); name: Mapped[str] = mapped_column(String); category: Mapped[str] = mapped_column(String); phone: Mapped[str] = mapped_column(String, default=''); side: Mapped[str] = mapped_column(String, default='both'); amount: Mapped[int] = mapped_column(Integer, default=0); paid_amount: Mapped[int] = mapped_column(Integer, default=0)
 class Attachment(Base):
     __tablename__ = 'attachments'; id: Mapped[int] = mapped_column(primary_key=True); owner_type: Mapped[str] = mapped_column(String); owner_id: Mapped[int] = mapped_column(Integer); filename: Mapped[str] = mapped_column(String); mime_type: Mapped[str] = mapped_column(String); storage_path: Mapped[str] = mapped_column(String, unique=True); created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+class GalleryPhoto(Base):
+    __tablename__ = 'gallery_photos'; id: Mapped[int] = mapped_column(primary_key=True); event_id: Mapped[int] = mapped_column(ForeignKey('events.id')); filename: Mapped[str] = mapped_column(String); mime_type: Mapped[str] = mapped_column(String); size_bytes: Mapped[int] = mapped_column(Integer); storage_key: Mapped[str] = mapped_column(String, unique=True); created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 class Login(BaseModel): username: str; password: str
 class TaskIn(BaseModel): title: str = Field(min_length=1, max_length=200); assignee_name: str|None = None; due_date: date|None = None; event_id: int|None = None; status: Literal['open','done'] = 'open'
@@ -50,6 +54,10 @@ class GuestUpdateIn(BaseModel): name: str = Field(min_length=1, max_length=160);
 class VendorIn(BaseModel): name: str = Field(min_length=1, max_length=160); category: str = Field(min_length=1, max_length=80); phone: str = Field(default='', max_length=60); side: Literal['bride','groom','both'] = 'both'; amount: int = Field(ge=0); paid_amount: int = Field(ge=0)
 class EventIn(BaseModel): name: str = Field(min_length=1, max_length=120); date: date; time_note: str = Field(default='', max_length=120); venue: str = Field(default='', max_length=200); side: Literal['bride','groom','both'] = 'both'
 class RsvpIn(BaseModel): statuses: dict[int, Literal['pending','accepted','declined']]; note: str|None = None
+class GalleryFileIn(BaseModel): filename: str = Field(min_length=1, max_length=255); mime_type: Literal['image/jpeg','image/png','image/webp']; size_bytes: int = Field(gt=0, le=25 * 1024 * 1024)
+class GalleryUploadIn(BaseModel): event_id: int; files: list[GalleryFileIn] = Field(min_length=1, max_length=30)
+class GalleryPhotoIn(GalleryFileIn): key: str = Field(min_length=1, max_length=600)
+class GalleryConfirmIn(BaseModel): event_id: int; photos: list[GalleryPhotoIn] = Field(min_length=1, max_length=30)
 
 app = FastAPI(title='Sumit & Puja Wedding API')
 app.add_middleware(CORSMiddleware, allow_origins=['https://wedding.skdev.one'], allow_credentials=True, allow_methods=['GET','POST','PATCH','DELETE','OPTIONS'], allow_headers=['Content-Type'])
@@ -94,6 +102,23 @@ def attachments_json(s, owner_type, owner_id): return [attachment_json(a) for a 
 def event_json(e,s): return {'id':e.id,'slug':e.slug,'name':e.name,'date':e.event_date.isoformat(),'time_note':e.time_note,'venue':e.venue,'side':e.side,'attachments':attachments_json(s,'event',e.id)}
 def vendor_json(v,s): return {'id':v.id,'name':v.name,'category':v.category,'phone':v.phone,'side':v.side,'amount':v.amount,'paid_amount':v.paid_amount,'attachments':attachments_json(s,'vendor',v.id)}
 def event_slug(name): return re.sub(r'[^a-z0-9]+','-',name.lower()).strip('-') or 'function'
+GALLERY_PREFIX = 'wedding-photos'
+GALLERY_ALLOWED = {'image/jpeg': '.jpg', 'image/png': '.png', 'image/webp': '.webp'}
+def gallery_bucket():
+    bucket = os.getenv('AWS_APP_STORAGE_BUCKET_NAME', '')
+    if not bucket: raise HTTPException(503, 'Gallery storage is not configured')
+    return bucket
+def gallery_s3_client():
+    if not os.getenv('AWS_APP_ACCESS_KEY_ID') or not os.getenv('AWS_APP_SECRET_ACCESS_KEY'):
+        raise HTTPException(503, 'Gallery storage is not configured')
+    return boto3.client('s3', aws_access_key_id=os.getenv('AWS_APP_ACCESS_KEY_ID'), aws_secret_access_key=os.getenv('AWS_APP_SECRET_ACCESS_KEY'), region_name=os.getenv('AWS_APP_S3_REGION_NAME', 'us-east-1'))
+def gallery_url(key):
+    bucket = gallery_bucket(); region = os.getenv('AWS_APP_S3_REGION_NAME', 'us-east-1')
+    host = f'{bucket}.s3.amazonaws.com' if region == 'us-east-1' else f'{bucket}.s3.{region}.amazonaws.com'
+    return f'https://{host}/{quote(key)}'
+def gallery_photo_json(photo, event):
+    return {'id':photo.id,'event_id':event.id,'event_name':event.name,'event_slug':event.slug,'filename':photo.filename,'mime_type':photo.mime_type,'size_bytes':photo.size_bytes,'url':gallery_url(photo.storage_key)}
+def gallery_event_prefix(event): return f'{GALLERY_PREFIX}/{event.slug}/'
 
 @app.get('/health')
 def health(): return {'status':'ok'}
@@ -132,6 +157,11 @@ def delete_event(event_id:int,name:str=Depends(user),s:Session=Depends(db)):
         path=Path('data',attachment.storage_path)
         if path.is_file(): path.unlink()
         s.delete(attachment)
+    gallery_photos = list(s.scalars(select(GalleryPhoto).where(GalleryPhoto.event_id == event.id)))
+    if gallery_photos:
+        storage = gallery_s3_client(); bucket = gallery_bucket()
+        for photo in gallery_photos:
+            storage.delete_object(Bucket=bucket, Key=photo.storage_key); s.delete(photo)
     event_name=event.name; s.delete(event); s.commit(); audit(s,name,f'Removed event: {event_name}'); return {'ok':True}
 @app.get('/tasks')
 def tasks(_:str=Depends(user),s:Session=Depends(db)): return [{'id':t.id,'title':t.title,'assignee_name':t.assignee_name,'due_date':t.due_date.isoformat() if t.due_date else None,'event_id':t.event_id,'status':t.status} for t in s.scalars(select(Task).order_by(Task.created_at.desc()))]
@@ -200,6 +230,50 @@ def delete_vendor(vendor_id:int,name:str=Depends(user),s:Session=Depends(db)):
 def budget_summary(_:str=Depends(user),s:Session=Depends(db)):
     vendors=list(s.scalars(select(Vendor))); planned=sum(v.amount for v in vendors); paid=sum(v.paid_amount for v in vendors)
     return {'planned_total':planned,'paid_total':paid,'due_total':planned-paid}
+@app.get('/gallery')
+def gallery(_:str=Depends(user), s:Session=Depends(db)):
+    photos = []
+    for photo in s.scalars(select(GalleryPhoto).order_by(GalleryPhoto.created_at.desc())):
+        event = s.get(Event, photo.event_id)
+        if event: photos.append(gallery_photo_json(photo, event))
+    return photos
+@app.get('/public/gallery')
+def public_gallery(s:Session=Depends(db)):
+    photos = []
+    for photo in s.scalars(select(GalleryPhoto).order_by(GalleryPhoto.created_at.desc())):
+        event = s.get(Event, photo.event_id)
+        if event: photos.append(gallery_photo_json(photo, event))
+    return photos
+@app.post('/gallery/uploads')
+def prepare_gallery_uploads(data:GalleryUploadIn, _:str=Depends(user), s:Session=Depends(db)):
+    event = s.get(Event, data.event_id)
+    if not event: raise HTTPException(404, 'Event not found')
+    storage = gallery_s3_client(); bucket = gallery_bucket(); uploads=[]
+    for file in data.files:
+        extension = GALLERY_ALLOWED[file.mime_type]
+        key = f'{gallery_event_prefix(event)}{uuid4().hex}{extension}'
+        upload_url = storage.generate_presigned_url('put_object', Params={'Bucket':bucket,'Key':key,'ContentType':file.mime_type}, ExpiresIn=900)
+        uploads.append({'key':key,'upload_url':upload_url,'filename':file.filename,'mime_type':file.mime_type,'size_bytes':file.size_bytes})
+    return {'uploads':uploads}
+@app.post('/gallery/confirm')
+def confirm_gallery_uploads(data:GalleryConfirmIn, name:str=Depends(user), s:Session=Depends(db)):
+    event = s.get(Event, data.event_id)
+    if not event: raise HTTPException(404, 'Event not found')
+    prefix = gallery_event_prefix(event); storage = gallery_s3_client(); bucket = gallery_bucket(); photos=[]
+    for item in data.photos:
+        if not item.key.startswith(prefix): raise HTTPException(422, 'Photo key does not belong to this event')
+        try: storage.head_object(Bucket=bucket, Key=item.key)
+        except Exception: raise HTTPException(422, 'Uploaded photo could not be found')
+        existing = s.scalar(select(GalleryPhoto).where(GalleryPhoto.storage_key == item.key))
+        if existing: photos.append(gallery_photo_json(existing, event)); continue
+        photo=GalleryPhoto(event_id=event.id,filename=item.filename,mime_type=item.mime_type,size_bytes=item.size_bytes,storage_key=item.key); s.add(photo); s.flush(); photos.append(gallery_photo_json(photo,event))
+    s.commit(); audit(s,name,f'Published {len(photos)} gallery photo(s) for {event.name}'); return photos
+@app.delete('/gallery/{photo_id}')
+def delete_gallery_photo(photo_id:int, name:str=Depends(user), s:Session=Depends(db)):
+    photo=s.get(GalleryPhoto, photo_id)
+    if not photo: raise HTTPException(404, 'Gallery photo not found')
+    gallery_s3_client().delete_object(Bucket=gallery_bucket(), Key=photo.storage_key)
+    s.delete(photo); s.commit(); audit(s,name,'Removed gallery photo'); return {'ok':True}
 async def save_attachment(owner_type, owner_id, file, actor, s):
     owner = s.get(Vendor if owner_type == 'vendor' else Event, owner_id)
     if not owner: raise HTTPException(404,'Owner not found')

@@ -7,6 +7,8 @@ export type ApiEvent = { id: number; slug: string; name: string; date: string; t
 export type GuestSummary = { total: number; bride_total: number; groom_total: number; events: Array<ApiEvent & { guest_count: number }> };
 export type ApiVendor = { id: number; name: string; category: string; phone: string; side: 'bride' | 'groom' | 'both'; amount: number; paid_amount: number; attachments: Attachment[] };
 export type BudgetSummary = { planned_total: number; paid_total: number; due_total: number };
+export type GalleryPhoto = { id: number; event_id: number; event_name: string; event_slug: string; filename: string; mime_type: string; size_bytes: number; url: string };
+export type GalleryUpload = { key: string; upload_url: string; filename: string; mime_type: string; size_bytes: number };
 
 async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const response = await fetch(`${API}${path}`, { credentials: 'include', headers: { 'Content-Type': 'application/json', ...(init.headers ?? {}) }, ...init });
@@ -25,6 +27,20 @@ async function upload<T>(path: string, file: File): Promise<T> {
   if (response.status === 413) throw new Error('Image is too large. Please choose a file under 8 MB.');
   if (!response.ok) throw new Error('Could not upload this image.');
   return response.json() as Promise<T>;
+}
+
+function putToStorage(uploadUrl: string, file: File, onProgress: (percent: number) => void): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open('PUT', uploadUrl);
+    request.setRequestHeader('Content-Type', file.type);
+    request.timeout = 120000;
+    request.upload.onprogress = (event) => { if (event.lengthComputable) onProgress(Math.round((event.loaded / event.total) * 100)); };
+    request.onload = () => request.status >= 200 && request.status < 300 ? resolve() : reject(new Error(request.status === 403 ? 'Storage denied this upload. Please try again.' : 'Photo upload failed. Please try again.'));
+    request.onerror = () => reject(new Error('Could not reach photo storage. Check your connection and try again.'));
+    request.ontimeout = () => reject(new Error('Photo upload took too long. Please try again.'));
+    request.send(file);
+  });
 }
 
 export const api = {
@@ -53,4 +69,10 @@ export const api = {
   uploadEventAttachment: (id: number, file: File) => upload<Attachment>(`/events/${id}/attachments`, file),
   deleteAttachment: (id: number) => request<{ ok: boolean }>(`/attachments/${id}`, { method: 'DELETE' }),
   attachmentUrl: (path: string) => `${API}${path}`,
+  gallery: () => request<GalleryPhoto[]>('/gallery'),
+  publicGallery: () => request<GalleryPhoto[]>('/public/gallery'),
+  prepareGalleryUploads: (eventId: number, files: File[]) => request<{ uploads: GalleryUpload[] }>('/gallery/uploads', { method: 'POST', body: JSON.stringify({ event_id: eventId, files: files.map((file) => ({ filename: file.name, mime_type: file.type, size_bytes: file.size })) }) }),
+  uploadGalleryFile: (upload: GalleryUpload, file: File, onProgress: (percent: number) => void) => putToStorage(upload.upload_url, file, onProgress),
+  confirmGalleryUploads: (eventId: number, uploads: GalleryUpload[]) => request<GalleryPhoto[]>('/gallery/confirm', { method: 'POST', body: JSON.stringify({ event_id: eventId, photos: uploads.map(({ key, filename, mime_type, size_bytes }) => ({ key, filename, mime_type, size_bytes })) }) }),
+  deleteGalleryPhoto: (id: number) => request<{ ok: boolean }>(`/gallery/${id}`, { method: 'DELETE' }),
 };

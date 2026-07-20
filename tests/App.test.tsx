@@ -1,8 +1,10 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { vi } from 'vitest';
+import { afterEach, vi } from 'vitest';
 import App from '../src/App';
 import { api, type Attachment } from '../src/api';
+
+afterEach(() => vi.restoreAllMocks());
 
 it('opens on the public invitation and moves to organiser login from its header', async () => {
   const user = userEvent.setup();
@@ -20,6 +22,17 @@ it('does not show private budget data before organiser sign-in', async () => {
 it('keeps the wedding portrait free of a decorative overlay', () => {
   const { container } = render(<App />);
   expect(container.querySelector('.sun-disc')).not.toBeInTheDocument();
+});
+
+it('offers organisers a dedicated gallery tab', async () => {
+  const user = userEvent.setup();
+  vi.spyOn(api, 'me').mockResolvedValue({ username: 'sumit-puja' });
+  vi.spyOn(api, 'login').mockResolvedValue({ username: 'sumit-puja' });
+  vi.spyOn(api, 'tasks').mockResolvedValue([]);
+  vi.spyOn(api, 'events').mockResolvedValue([]);
+  render(<App />);
+  await user.click(screen.getByRole('button', { name: /planner login/i }));
+  expect((await screen.findAllByRole('button', { name: 'Gallery' }))[0]).toBeVisible();
 });
 
 it('uses a dedicated mobile-friendly organiser login layout', async () => {

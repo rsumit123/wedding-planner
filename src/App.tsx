@@ -20,6 +20,7 @@ import {
   type Attachment,
   type BudgetSummary,
   type GuestSummary,
+  type GalleryPhoto,
 } from "./api";
 
 const nav = [
@@ -28,6 +29,7 @@ const nav = [
   "Events",
   "Guests & RSVPs",
   "Budget & vendors",
+  "Gallery",
   "Public invite",
 ];
 type UiTask = { id: number; text: string; meta: string; done: boolean };
@@ -241,6 +243,8 @@ export default function App() {
           <EventManager events={events} refresh={load} />
         ) : page === "Guests & RSVPs" ? (
           <GuestManager />
+        ) : page === "Gallery" ? (
+          <GalleryManager events={events} />
         ) : (
           <BudgetManager />
         )}
@@ -1244,14 +1248,62 @@ function BudgetManager() {
   );
 }
 
+function GalleryManager({ events }: { events: ApiEvent[] }) {
+  const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
+  const [eventId, setEventId] = useState<number>(0);
+  const [busy, setBusy] = useState(false);
+  const [progress, setProgress] = useState<Record<string, number>>({});
+  const [error, setError] = useState("");
+  const load = async () => { try { setPhotos(await api.gallery()); } catch (e) { setError((e as Error).message); } };
+  useEffect(() => { load(); }, []);
+  useEffect(() => { if (!eventId && events[0]) setEventId(events[0].id); }, [events, eventId]);
+  const upload = async (files: FileList | null) => {
+    const selected = Array.from(files ?? []);
+    if (!eventId || !selected.length) return;
+    const invalid = selected.find((file) => !["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 25 * 1024 * 1024);
+    if (invalid) { setError("Use JPG, PNG, or WebP photos under 25 MB."); return; }
+    setBusy(true); setError(""); setProgress(Object.fromEntries(selected.map((file) => [file.name, 0])));
+    try {
+      const prepared = await api.prepareGalleryUploads(eventId, selected);
+      const filesByName = new Map(selected.map((file) => [file.name, file]));
+      await Promise.all(prepared.uploads.map(async (item) => {
+        const file = filesByName.get(item.filename);
+        if (!file) throw new Error(`Could not find ${item.filename} to upload.`);
+        await api.uploadGalleryFile(item, file, (percent) => setProgress((current) => ({ ...current, [file.name]: percent })));
+      }));
+      await api.confirmGalleryUploads(eventId, prepared.uploads);
+      setProgress({}); await load();
+    } catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
+  };
+  const remove = async (photo: GalleryPhoto) => {
+    if (!window.confirm(`Remove ${photo.filename} from the public gallery?`)) return;
+    try { await api.deleteGalleryPhoto(photo.id); await load(); } catch (e) { setError((e as Error).message); }
+  };
+  const grouped = events.map((event) => ({ event, photos: photos.filter((photo) => photo.event_id === event.id) }));
+  return <section className="gallery-manager">
+    <p className="eyebrow ink">Public wedding gallery</p><h2>Share the memories.</h2>
+    <p>Upload originals by celebration. Guests can view and download them from the public invite.</p>
+    <div className="gallery-upload-panel">
+      <label>Celebration<select value={eventId} onChange={(e) => setEventId(Number(e.target.value))} disabled={busy}>{events.map((event) => <option key={event.id} value={event.id}>{event.name}</option>)}</select></label>
+      <label className="gallery-picker">{busy ? "Uploading photos…" : "Choose photos to publish"}<input aria-label="Choose photos to publish" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={busy} onChange={(e) => { upload(e.target.files); e.currentTarget.value = ""; }} /></label>
+      {busy && <div className="upload-progress" aria-live="polite">{Object.entries(progress).map(([name, value]) => <span key={name}><small>{name}</small><i><b style={{ width: `${value}%` }} /></i><em>{value}%</em></span>)}</div>}
+      {error && <p className="form-error" role="alert">{error}</p>}
+    </div>
+    <div className="planner-albums">{grouped.map(({ event, photos: eventPhotos }) => <article key={event.id}><div><h3>{event.name}</h3><small>{eventPhotos.length} published photo{eventPhotos.length === 1 ? "" : "s"}</small></div>{eventPhotos.length ? <div className="planner-photo-grid">{eventPhotos.map((photo) => <figure key={photo.id}><img src={photo.url} alt={photo.filename} /><button onClick={() => remove(photo)} aria-label={`Remove ${photo.filename}`}><Trash2 size={13} /></button></figure>)}</div> : <p className="empty-state">No photos published yet.</p>}</article>)}</div>
+  </section>;
+}
+
 function InvitePage({ onPlannerLogin }: { onPlannerLogin: () => void }) {
   const [events, setEvents] = useState<ApiEvent[]>([]);
+  const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
+  const [openPhoto, setOpenPhoto] = useState<GalleryPhoto | null>(null);
   useEffect(() => {
-    api
-      .publicEvents()
-      .then(setEvents)
-      .catch(() => setEvents([]));
+    Promise.all([api.publicEvents(), api.publicGallery()])
+      .then(([publicEvents, publicPhotos]) => { setEvents(publicEvents); setPhotos(publicPhotos); })
+      .catch(() => { setEvents([]); setPhotos([]); });
   }, []);
+  const albums = Array.from(new Set(photos.map((photo) => photo.event_id))).map((eventId) => ({ event: events.find((event) => event.id === eventId), photos: photos.filter((photo) => photo.event_id === eventId) })).filter((album): album is { event: ApiEvent; photos: GalleryPhoto[] } => Boolean(album.event));
   return (
     <div className="public-invite">
       <header>
@@ -1301,6 +1353,29 @@ function InvitePage({ onPlannerLogin }: { onPlannerLogin: () => void }) {
           Questions? Please message the family directly.
         </p>
       </section>
+      {albums.length > 0 && <section className="public-gallery">
+        <p className="eyebrow ink">Wedding memories</p>
+        <h2>Photo gallery</h2>
+        <p>Moments from each celebration, ready to view and download.</p>
+        <div className="public-albums">
+          {albums.map(({ event, photos: albumPhotos }) => <article key={event.id}>
+            <button onClick={() => setOpenPhoto(albumPhotos[0])} aria-label={`View ${event.name} photos`}>
+              <img src={albumPhotos[0].url} alt="" />
+              <span><strong>{event.name}</strong><small>{albumPhotos.length} photo{albumPhotos.length === 1 ? "" : "s"}</small></span>
+            </button>
+            <div className="public-photo-grid">
+              {albumPhotos.slice(1).map((photo) => <button key={photo.id} onClick={() => setOpenPhoto(photo)} aria-label={`View ${photo.filename}`}><img src={photo.url} alt="" /></button>)}
+            </div>
+          </article>)}
+        </div>
+      </section>}
+      {openPhoto && <div className="photo-lightbox" role="dialog" aria-modal="true" aria-label="Photo viewer" onClick={() => setOpenPhoto(null)}>
+        <div onClick={(event) => event.stopPropagation()}>
+          <button className="lightbox-close" onClick={() => setOpenPhoto(null)} aria-label="Close photo">×</button>
+          <img src={openPhoto.url} alt={openPhoto.filename} />
+          <a href={openPhoto.url} download={openPhoto.filename}>Download original</a>
+        </div>
+      </div>}
     </div>
   );
 }
