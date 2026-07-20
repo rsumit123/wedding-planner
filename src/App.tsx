@@ -153,11 +153,19 @@ export default function App() {
       .then(() => setSignedIn(true))
       .catch(() => undefined);
   }, []);
-  const openPlanner = () => {
-    if (signedIn) {
-      setEntryView("planner");
-      setPage("Today");
-    } else setEntryView("login");
+  const openPlanner = async () => {
+    if (!signedIn) {
+      setEntryView("login");
+      return;
+    }
+    setEntryView("planner");
+    setPage("Today");
+    setError("");
+    try {
+      await load();
+    } catch (e) {
+      setError((e as Error).message);
+    }
   };
   const addTask = async () => {
     if (!draft.trim()) return;
@@ -1286,7 +1294,7 @@ function GalleryManager({ events }: { events: ApiEvent[] }) {
     <p>Upload originals by celebration. Guests can view and download them from the public invite.</p>
     <div className="gallery-upload-panel">
       <label>Celebration<select value={eventId} onChange={(e) => setEventId(Number(e.target.value))} disabled={busy}>{events.map((event) => <option key={event.id} value={event.id}>{event.name}</option>)}</select></label>
-      <label className="gallery-picker">{busy ? "Uploading photos…" : "Choose photos to publish"}<input aria-label="Choose photos to publish" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={busy} onChange={(e) => { upload(e.target.files); e.currentTarget.value = ""; }} /></label>
+      <label className="gallery-picker" style={{ alignItems: "center", justifyContent: "center" }}>{busy ? "Uploading photos…" : "Choose photos to publish"}<input aria-label="Choose photos to publish" type="file" accept="image/jpeg,image/png,image/webp" multiple disabled={busy} onChange={(e) => { upload(e.target.files); e.currentTarget.value = ""; }} /></label>
       {busy && <div className="upload-progress" aria-live="polite">{Object.entries(progress).map(([name, value]) => <span key={name}><small>{name}</small><i><b style={{ width: `${value}%` }} /></i><em>{value}%</em></span>)}</div>}
       {error && <p className="form-error" role="alert">{error}</p>}
     </div>
@@ -1294,7 +1302,7 @@ function GalleryManager({ events }: { events: ApiEvent[] }) {
   </section>;
 }
 
-function InvitePage({ onPlannerLogin }: { onPlannerLogin: () => void }) {
+function InvitePage({ onPlannerLogin }: { onPlannerLogin: () => void | Promise<void> }) {
   const [events, setEvents] = useState<ApiEvent[]>([]);
   const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
   const [openPhoto, setOpenPhoto] = useState<GalleryPhoto | null>(null);

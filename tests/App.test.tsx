@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, vi } from 'vitest';
 import App from '../src/App';
@@ -33,6 +33,27 @@ it('offers organisers a dedicated gallery tab', async () => {
   render(<App />);
   await user.click(screen.getByRole('button', { name: /planner login/i }));
   expect((await screen.findAllByRole('button', { name: 'Gallery' }))[0]).toBeVisible();
+});
+
+it('loads celebrations before an existing organiser opens the gallery', async () => {
+  const user = userEvent.setup();
+  const celebration = { id: 2, slug: 'haldi', name: 'Haldi & Matkor', date: '2026-11-30', time_note: '', venue: '', side: 'both' as const, attachments: [] };
+  vi.spyOn(api, 'me').mockResolvedValue({ username: 'sumit-puja' });
+  vi.spyOn(api, 'tasks').mockResolvedValue([]);
+  const events = vi.spyOn(api, 'events').mockResolvedValue([celebration]);
+  vi.spyOn(api, 'gallery').mockResolvedValue([]);
+  vi.spyOn(api, 'publicEvents').mockResolvedValue([celebration]);
+  vi.spyOn(api, 'publicGallery').mockResolvedValue([]);
+  render(<App />);
+  await waitFor(() => expect(api.me).toHaveBeenCalled());
+  await user.click(screen.getByRole('button', { name: /planner login/i }));
+  await user.click((await screen.findAllByRole('button', { name: 'Gallery' }))[0]);
+  expect(await screen.findByRole('option', { name: 'Haldi & Matkor' })).toBeVisible();
+  expect(screen.getByText('Choose photos to publish')).toHaveStyle({
+    alignItems: 'center',
+    justifyContent: 'center',
+  });
+  expect(events).toHaveBeenCalled();
 });
 
 it('uses a dedicated mobile-friendly organiser login layout', async () => {
